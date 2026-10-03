@@ -48,10 +48,9 @@ cleanup() {
 trap cleanup EXIT
 (
   cd "$source_root"
-  # The moving builder image may contain a different NDK than this pinned checkout.
-  # Bootstrap the SDK/NDK declared by its properties before compiling.
-  CONTAINER_NAME="$container_name" CI=true ./scripts/run-docker.sh \
-    bash -c './scripts/setup-android-sdk.sh && ./build-package.sh -a aarch64 -F proot'
+  # Pin the builder as well as the recipes so the required NDK remains available.
+  TERMUX_BUILDER_IMAGE_NAME="$TERMUX_BUILDER_IMAGE" \
+    CONTAINER_NAME="$container_name" CI=true ./scripts/run-docker.sh ./build-package.sh -a aarch64 -F proot
 )
 
 docker run --rm \
