@@ -52,15 +52,11 @@ data class RuntimeEntrypoint(
 
 @Serializable
 data class RuntimeSources(
-    val ubuntuImage: String,
-    val nodeVersion: String,
-    val nodeDistributionSha256: String,
-    val dshVersion: String,
-    val dshPackageIntegrity: String,
-    val termuxProotVersion: String,
-    val termuxProotCommit: String,
-    val termuxPackagesCommit: String,
-    val prorootVersion: String,
+    val ubuntuImage: String = "",
+    val termuxProotVersion: String = "",
+    val termuxProotCommit: String = "",
+    val termuxPackagesCommit: String = "",
+    val prorootVersion: String = "",
 )
 
 data class InstalledRuntime(

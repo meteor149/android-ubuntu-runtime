@@ -33,20 +33,20 @@ configure<PublishingExtension> {
                 inceptionYear.set("2026")
                 description.set(if (project.name == "android-ubuntu-runtime")
                     "Android Ubuntu installation and PRoot/chroot execution library"
-                else "Versioned Ubuntu ARM64 root filesystem with Node.js and DSH")
-                url.set("https://github.com/meteor149/android-ubuntu-runtime")
+                else "Versioned general-purpose Ubuntu ARM64 root filesystem")
+                url.set("https://github.com/meteor149/${project.name}")
                 licenses {
                     license {
                         name.set("Apache License 2.0 (host code); bundled artifacts retain their upstream licenses")
                         distribution.set("repo")
-                        url.set("https://github.com/meteor149/android-ubuntu-runtime/blob/main/LICENSE")
+                        url.set("https://github.com/meteor149/${project.name}/blob/main/LICENSE")
                     }
                 }
                 developers { developer { id.set("meteor149"); name.set("meteor149") } }
                 scm {
-                    url.set("https://github.com/meteor149/android-ubuntu-runtime")
-                    connection.set("scm:git:https://github.com/meteor149/android-ubuntu-runtime.git")
-                    developerConnection.set("scm:git:ssh://git@github.com/meteor149/android-ubuntu-runtime.git")
+                    url.set("https://github.com/meteor149/${project.name}")
+                    connection.set("scm:git:https://github.com/meteor149/${project.name}.git")
+                    developerConnection.set("scm:git:ssh://git@github.com/meteor149/${project.name}.git")
                 }
             }
         }

@@ -5,8 +5,8 @@
 
 ```kotlin
 dependencies {
-    implementation("io.github.meteor149:ubuntu-runtime:0.1.0")
-    implementation("io.github.meteor149:ubuntu-image:24.04-dsh-0.1.0-rc.6.11")
+    implementation("io.github.meteor149:ubuntu-runtime:0.2.0")
+    implementation("io.github.meteor149:ubuntu-image:24.04-1")
 }
 
 android {
@@ -46,14 +46,33 @@ println("exit=${result.exitCode}\n${result.output}")
 `execute` 等待命令退出，返回退出码和合并的 stdout/stderr；参数按字面量传递，
 需要 shell 语法时显式使用 `/bin/bash -lc`。输出保存在内存中，适合有界输出的命令。
 取消调用 coroutine 会停止命令。可以传入 `RuntimeMode.Chroot`，由设备的 `su`
-管理器请求 root 授权。不要在同一 app 中同时使用通用执行接口和 DSH 管理器操作同一 rootfs。
+管理器请求 root 授权。不要在同一 app 中同时用多个管理器操作同一 rootfs。
 
 数据位于宿主 app 的私有目录：`files/runtime/versions` 保存安装的镜像，
 `files/linux-data/home`、`workspaces` 保存持久数据。安装前至少需要镜像描述文件
 指定的空间（当前 2 GiB）；安装新镜像会替换旧 rootfs，保留持久数据目录。
 
-接入 DSH 网关可使用 `RuntimeManager.get(context)` 的 `probe/install/start/stop`，
-并观察 `RuntimeStateStore.state`，运行成功后 `webUrl` 为带 token 的本地地址。
-前台服务、通知与 WebView 由宿主实现；现有 `app` 是完整参考。
-WebView 使用 HTTP loopback 时，宿主还需配置允许本地明文 HTTP 的 network security config。
-长时间运行任务由宿主管理前台服务及相应权限。
+通用目录挂载和长运行命令示例：
+
+```kotlin
+val tools = applicationContext.filesDir.toPath().resolve("my-tools")
+java.nio.file.Files.createDirectories(tools)
+ubuntu.start(
+    UbuntuCommand(
+        arguments = listOf("/bin/bash", "-lc", "exec python3 -m http.server 8080"),
+        bindings = mapOf("/my-tools" to tools),
+        workingDirectory = "/my-tools",
+    ),
+    onLog = { line -> /* 收集日志，宿主自行判断服务就绪 */ },
+    onExit = { code -> /* 更新状态 */ },
+)
+// 停止完整进程组（包括子进程）。
+ubuntu.stop()
+```
+
+挂载源需为已存在的绝对目录，目标为规范的 Ubuntu 绝对路径；环境变量和参数按字面量传递。
+长时间运行任务由宿主管理前台服务及相应权限。两库均不提供 Node、DSH、网关或 WebView。
+DSH 专用的 `RuntimeManager`、`RuntimeStateStore`、就绪协议及资源包在
+`dsh-mobile` 的内部 `:dsh-runtime` 模块中，包名为 `ai.meteor.dsh.runtime`。
+
+0.2.0 将 DSH API 移出了 Ubuntu 运行库；使用旧 API 的宿主应迁移到自己的业务层。

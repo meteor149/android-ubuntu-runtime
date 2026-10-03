@@ -1,7 +1,7 @@
 # android-ubuntu-runtime
 
 Android library for installing an app-private Ubuntu rootfs, executing commands
-through PRoot or root-managed chroot, and managing the existing DSH gateway.
+through PRoot or root-managed chroot, mounting application directories and supervising processes.
 No dependency on Compose, WebView, DSH Mobile, or the image repository is needed
 to build this project. The consuming app chooses its image dependency.
 

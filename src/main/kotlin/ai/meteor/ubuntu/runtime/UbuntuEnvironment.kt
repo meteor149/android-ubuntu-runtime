@@ -8,10 +8,18 @@ import kotlinx.coroutines.sync.withLock
 data class UbuntuCommand(
     val arguments: List<String>,
     val environment: Map<String, String> = emptyMap(),
+    val bindings: Map<String, java.nio.file.Path> = emptyMap(),
+    val workingDirectory: String = "/workspace",
 ) {
     init {
         require(arguments.isNotEmpty() && arguments.first().startsWith("/")) {
             "Supply an absolute guest executable followed by its arguments"
+        }
+        require(workingDirectory.startsWith("/") && '\u0000' !in workingDirectory) { "Invalid guest working directory" }
+        bindings.forEach { (target, source) ->
+            require(target.startsWith("/") && target != "/" && ':' !in target && '\u0000' !in target &&
+                java.nio.file.Paths.get(target).normalize().toString() == target) { "Invalid guest bind target" }
+            require(source.isAbsolute && ':' !in source.toString() && '\u0000' !in source.toString()) { "Invalid host bind source" }
         }
         require(arguments.none { '\u0000' in it }) { "Arguments cannot contain NUL" }
         require(environment.all { (name, value) ->
@@ -30,7 +38,7 @@ data class UbuntuCommandResult(val exitCode: Int, val output: String)
 class UbuntuEnvironment(context: Context) {
     private val artifacts = RuntimeArtifactRepository(context.applicationContext)
     private val installer = RootfsInstaller(context.applicationContext, artifacts)
-    private val supervisor = RuntimeProcessSupervisor(context.applicationContext, RootAccessController())
+    private val supervisor = UbuntuProcessSupervisor(context.applicationContext, RootAccessController())
     private val mutex = Mutex()
 
     suspend fun probe(): InstalledRuntime? = mutex.withLock { installer.probe() }
@@ -46,4 +54,17 @@ class UbuntuEnvironment(context: Context) {
         val installed = requireNotNull(installer.probe()) { "Install Ubuntu before executing commands" }
         supervisor.execute(installed, mode, command)
     }
+
+    /** Starts a long-running command; the caller decides when its service is ready. */
+    suspend fun start(
+        command: UbuntuCommand,
+        mode: RuntimeMode = RuntimeMode.Proot,
+        onLog: (String) -> Unit = {},
+        onExit: (Int) -> Unit = {},
+    ) = mutex.withLock {
+        val installed = requireNotNull(installer.probe()) { "Install Ubuntu before starting commands" }
+        supervisor.start(installed, mode, command, onLog, onExit)
+    }
+
+    suspend fun stop() = mutex.withLock { supervisor.stop() }
 }

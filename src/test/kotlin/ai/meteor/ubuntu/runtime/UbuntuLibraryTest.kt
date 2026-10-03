@@ -41,7 +41,7 @@ class UbuntuLibraryTest {
 
     @Test fun chrootPreservesLiteralArgumentsAndEnvironment() {
         val path = Paths.get("/test")
-        val script = chrootLaunchScript(path, path, path, path, path, "", "/bin/bash", 1, 1, 1,
+        val script = chrootLaunchScript(path, path, path, path, "/bin/bash", 1, 1, 1,
             arguments = listOf("-lc", "printf '%s' \"\$VALUE\""), environment = mapOf("VALUE" to "a'b"))
         assertContains(script, shellQuote("VALUE=a'b"))
         assertContains(script, listOf("/bin/bash", "-lc", "printf '%s' \"\$VALUE\"").joinToString(" ", transform = ::shellQuote))

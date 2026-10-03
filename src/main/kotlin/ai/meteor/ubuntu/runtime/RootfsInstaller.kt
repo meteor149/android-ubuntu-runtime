@@ -21,12 +21,17 @@ import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.zstandard.ZstdCompressorInputStream
 
-class RootfsInstaller(
+class AssetPackageInstaller(
     context: Context,
     private val artifacts: RuntimeArtifactRepository,
+    directoryName: String = "runtime",
+    private val openArchive: (RuntimeManifest) -> java.io.InputStream = artifacts::openRootfs,
+    private val requiredPaths: List<String> = REQUIRED_ROOTFS_PATHS,
 ) {
     private val appContext = context.applicationContext
-    private val runtimeRoot = appContext.filesDir.toPath().resolve("runtime")
+    private val runtimeRoot = appContext.filesDir.toPath().resolve(directoryName.also {
+        require(it.matches(Regex("[A-Za-z0-9_-]+"))) { "Invalid package directory" }
+    })
     private val versionsRoot = runtimeRoot.resolve("versions")
 
     suspend fun probe(manifest: RuntimeManifest = artifacts.readManifest()): InstalledRuntime? = withContext(Dispatchers.IO) {
@@ -62,7 +67,7 @@ class RootfsInstaller(
                 onProgress(0.12f, RuntimeMessage(RuntimeMessageKind.ExtractingUbuntu))
                 extractRootfs(manifest, staging.resolve("rootfs"), onProgress)
                 validateRootfs(staging.resolve("rootfs"))
-                Files.write(staging.resolve(INSTALL_MARKER), "${manifest.runtimeVersion}\n".encodeToByteArray())
+                Files.write(staging.resolve(INSTALL_MARKER), "${manifest.runtimeVersion}\n${rootfsArtifact.sha256}\n".encodeToByteArray())
 
                 val target = installed.runtimeDirectory
                 deleteTree(target)
@@ -88,14 +93,15 @@ class RootfsInstaller(
 
     private fun isComplete(runtime: InstalledRuntime): Boolean {
         val marker = runtime.runtimeDirectory.resolve(INSTALL_MARKER)
-        return runCatching { Files.readAllBytes(marker).decodeToString().trim() == runtime.manifest.runtimeVersion }.getOrDefault(false) &&
-            REQUIRED_ROOTFS_PATHS.all { path -> Files.exists(runtime.rootfs.resolve(path), LinkOption.NOFOLLOW_LINKS) }
+        val identity = "${runtime.manifest.runtimeVersion}\n${runtime.manifest.rootfs?.sha256}"
+        return runCatching { Files.readAllBytes(marker).decodeToString().trim() == identity }.getOrDefault(false) &&
+            requiredPaths.all { path -> Files.exists(runtime.rootfs.resolve(path), LinkOption.NOFOLLOW_LINKS) }
     }
 
     private suspend fun verifyRootfs(manifest: RuntimeManifest) {
         val expected = requireNotNull(manifest.rootfs).sha256
         val digest = MessageDigest.getInstance("SHA-256")
-        artifacts.openRootfs(manifest).buffered().use { input ->
+        openArchive(manifest).buffered().use { input ->
             val buffer = ByteArray(COPY_BUFFER_BYTES)
             while (true) {
                 currentCoroutineContext().ensureActive()
@@ -118,7 +124,7 @@ class RootfsInstaller(
         Files.createDirectories(destination)
         val pendingHardLinks = mutableListOf<PendingHardLink>()
         var entries = 0
-        artifacts.openRootfs(manifest).buffered().use { compressed ->
+        openArchive(manifest).buffered().use { compressed ->
             ZstdCompressorInputStream(compressed).use { zstd ->
                 TarArchiveInputStream(zstd).use { tar ->
                     while (true) {
@@ -202,7 +208,7 @@ class RootfsInstaller(
     }
 
     private fun validateRootfs(root: Path) {
-        require(REQUIRED_ROOTFS_PATHS.all { path -> Files.exists(root.resolve(path), LinkOption.NOFOLLOW_LINKS) }) {
+        require(requiredPaths.all { path -> Files.exists(root.resolve(path), LinkOption.NOFOLLOW_LINKS) }) {
             "Built rootfs is incomplete"
         }
         Files.createDirectories(root.resolve("workspace"))
@@ -271,7 +277,9 @@ class RootfsInstaller(
     }
 }
 
-private const val INSTALL_MARKER = ".dsh-mobile-installed"
+typealias RootfsInstaller = AssetPackageInstaller
+
+private const val INSTALL_MARKER = ".ubuntu-installed"
 private data class PendingHardLink(val link: Path, val target: Path, val mode: Int)
 private const val COPY_BUFFER_BYTES = 64 * 1024
 private const val PROGRESS_ENTRY_INTERVAL = 250

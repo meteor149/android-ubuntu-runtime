@@ -2,7 +2,6 @@ package ai.meteor.ubuntu.runtime
 
 import android.content.Context
 import android.net.ConnectivityManager
-import android.util.Base64
 import android.util.Log
 import android.system.ErrnoException
 import android.system.Os
@@ -13,8 +12,6 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
-import java.security.SecureRandom
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,13 +22,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
 
-data class RuntimeSession(
-    val authenticatedUrl: String,
-)
-
-class RuntimeProcessSupervisor(
+class UbuntuProcessSupervisor(
     context: Context,
     private val rootAccess: RootAccessController,
 ) {
@@ -47,19 +39,20 @@ class RuntimeProcessSupervisor(
     suspend fun start(
         runtime: InstalledRuntime,
         mode: RuntimeMode,
-        onLog: (String) -> Unit,
-        onExit: (Int) -> Unit,
-    ): RuntimeSession = withContext(Dispatchers.IO) {
+        command: UbuntuCommand,
+        onLog: (String) -> Unit = {},
+        onExit: (Int) -> Unit = {},
+    ): Unit = withContext(Dispatchers.IO) {
         check(process?.isAlive != true) { "The runtime is already running" }
+        if (mode == RuntimeMode.Chroot) check(rootAccess.request()) { "Root access is required for chroot" }
         val data = prepareDataDirectories()
-        val token = randomToken()
-        val readiness = CompletableDeferred<Int>()
+        command.bindings.values.forEach { require(Files.isDirectory(it)) { "Bind source must be an existing directory: $it" } }
         configureResolver(runtime.rootfs)
 
         val child = when (mode) {
-            RuntimeMode.Proot -> startProot(runtime, data, token)
-            RuntimeMode.Proroot -> startProroot(runtime, data, token)
-            RuntimeMode.Chroot -> startChroot(runtime, data, token)
+            RuntimeMode.Proot -> startProot(runtime, data, command)
+            RuntimeMode.Proroot -> startProroot(runtime, data, command)
+            RuntimeMode.Chroot -> startChroot(runtime, data, command)
         }
         process = child
         runningMode = mode
@@ -72,16 +65,12 @@ class RuntimeProcessSupervisor(
                         val line = rawLine.take(MAX_LOG_LINE_CHARS)
                         Log.i(LOG_TAG, line)
                         onLog(line)
-                        READY_PATTERN.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { port ->
-                            if (!readiness.isCompleted) readiness.complete(port)
-                        }
                     }
                 }
             } catch (error: IOException) {
                 // Android closes process pipes during destroy(), interrupting a blocking read.
                 if (currentCoroutineContext().isActive && child.isAlive) {
                     Log.e(LOG_TAG, "Runtime output reader failed", error)
-                    if (!readiness.isCompleted) readiness.completeExceptionally(error)
                     child.destroy()
                 }
             }
@@ -92,9 +81,6 @@ class RuntimeProcessSupervisor(
             signalRootlessGroup(groupFile, OsConstants.SIGKILL)
             groupFile?.let(Files::deleteIfExists)
             Log.i(LOG_TAG, "${mode.name} process exited with code $exitCode")
-            if (!readiness.isCompleted) readiness.completeExceptionally(
-                IllegalStateException("DSH exited before becoming ready (exit=$exitCode)"),
-            )
             if (process === child) {
                 process = null
                 runningMode = null
@@ -104,16 +90,10 @@ class RuntimeProcessSupervisor(
             }
         }
 
-        try {
-            val port = withTimeout(START_TIMEOUT_MILLIS) { readiness.await() }
-            RuntimeSession("http://127.0.0.1:$port/?token=$token")
-        } catch (error: Throwable) {
-            stop()
-            throw error
-        }
+        Unit
     }
 
-    /** Executes a command and collects merged stdout/stderr without the DSH readiness protocol. */
+    /** Executes a command and collects merged stdout/stderr for finite Ubuntu commands. */
     suspend fun execute(
         runtime: InstalledRuntime,
         mode: RuntimeMode,
@@ -121,12 +101,13 @@ class RuntimeProcessSupervisor(
     ): UbuntuCommandResult = withContext(Dispatchers.IO) {
         check(process?.isAlive != true) { "The runtime is already running" }
         if (mode == RuntimeMode.Chroot) check(rootAccess.request()) { "Root access is required for chroot" }
+        command.bindings.values.forEach { require(Files.isDirectory(it)) { "Bind source must be an existing directory: $it" } }
         configureResolver(runtime.rootfs)
         val data = prepareDataDirectories()
         val child = when (mode) {
-            RuntimeMode.Proot -> startProot(runtime, data, "", command)
-            RuntimeMode.Proroot -> startProroot(runtime, data, "", command)
-            RuntimeMode.Chroot -> startChroot(runtime, data, "", command)
+            RuntimeMode.Proot -> startProot(runtime, data, command)
+            RuntimeMode.Proroot -> startProroot(runtime, data, command)
+            RuntimeMode.Chroot -> startChroot(runtime, data, command)
         }
         process = child
         runningMode = mode
@@ -208,13 +189,12 @@ class RuntimeProcessSupervisor(
     private fun startProot(
         runtime: InstalledRuntime,
         data: RuntimeDataDirectories,
-        token: String,
-        command: UbuntuCommand? = null,
+        command: UbuntuCommand,
     ): Process {
         val nativeDirectory = Paths.get(appContext.applicationInfo.nativeLibraryDir)
         val proot = requireExecutable(nativeDirectory, runtime.manifest.entrypoint.prootLibrary)
         val loader = requireExecutable(nativeDirectory, runtime.manifest.entrypoint.loaderLibrary)
-        return startRootless(ProcessBuilder(buildProotCommand(runtime, proot, data, token, command))
+        return startRootless(ProcessBuilder(buildProotCommand(runtime, proot, data, command))
             .directory(runtime.runtimeDirectory.toFile())
             .redirectErrorStream(true)
             .apply {
@@ -232,8 +212,7 @@ class RuntimeProcessSupervisor(
     private fun startChroot(
         runtime: InstalledRuntime,
         data: RuntimeDataDirectories,
-        token: String,
-        command: UbuntuCommand? = null,
+        command: UbuntuCommand,
     ): Process {
         rootlessPidFile = null
         val controlDirectory = appContext.cacheDir.toPath().resolve("chroot")
@@ -243,7 +222,7 @@ class RuntimeProcessSupervisor(
         Files.deleteIfExists(pidFile)
         Files.write(
             script,
-            buildChrootScript(runtime, data, token, pidFile, command).toByteArray(Charsets.UTF_8),
+            buildChrootScript(runtime, data, pidFile, command).toByteArray(Charsets.UTF_8),
             StandardOpenOption.CREATE_NEW,
             StandardOpenOption.WRITE,
         )
@@ -255,8 +234,7 @@ class RuntimeProcessSupervisor(
     private fun startProroot(
         runtime: InstalledRuntime,
         data: RuntimeDataDirectories,
-        token: String,
-        command: UbuntuCommand? = null,
+        command: UbuntuCommand,
     ): Process {
         val nativeDirectory = Paths.get(appContext.applicationInfo.nativeLibraryDir)
         val entrypoint = runtime.manifest.entrypoint
@@ -269,13 +247,13 @@ class RuntimeProcessSupervisor(
                 proroot = proroot,
                 rootfs = runtime.rootfs,
                 home = data.home,
-                dshHome = data.dshHome,
                 workspaces = data.workspaces,
                 temporary = data.prorootTemporary,
-                token = token,
-                guestCommand = command?.arguments?.first() ?: entrypoint.guestCommand,
-                arguments = command?.arguments?.drop(1).orEmpty(),
-                environment = command?.environment.orEmpty(),
+                guestCommand = command.arguments.first(),
+                arguments = command.arguments.drop(1),
+                environment = command.environment,
+                bindings = command.bindings,
+                workingDirectory = command.workingDirectory,
             ),
         )
             .directory(runtime.runtimeDirectory.toFile())
@@ -325,8 +303,7 @@ class RuntimeProcessSupervisor(
         runtime: InstalledRuntime,
         proot: Path,
         data: RuntimeDataDirectories,
-        token: String,
-        command: UbuntuCommand? = null,
+        command: UbuntuCommand,
     ): List<String> = buildList {
         add(proot.toString())
         add("--kill-on-exit")
@@ -343,10 +320,10 @@ class RuntimeProcessSupervisor(
         bindIfReadable(Paths.get("/proc"), "/proc")
         bindIfReadable(Paths.get("/sys"), "/sys")
         bind(data.home, "/root")
-        bind(data.dshHome, "/dsh-home")
         bind(data.workspaces, "/workspace")
+        command.bindings.forEach { (target, source) -> bind(source, target) }
         add("-w")
-        add("/workspace")
+        add(command.workingDirectory)
         add("/usr/bin/env")
         add("-i")
         add("HOME=/root")
@@ -356,29 +333,25 @@ class RuntimeProcessSupervisor(
         add("TERM=xterm-256color")
         add("LANG=C.UTF-8")
         add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-        add("DSH_HOME=/dsh-home")
-        add("DSH_PERMISSION_MODE=danger-full-access")
-        add("DSH_MOBILE_TOKEN=$token")
-        command?.environment?.forEach { (name, value) -> add("$name=$value") }
-        addAll(command?.arguments ?: listOf(runtime.manifest.entrypoint.guestCommand))
+        command.environment.forEach { (name, value) -> add("$name=$value") }
+        addAll(command.arguments)
     }
 
     private fun buildChrootScript(
         runtime: InstalledRuntime,
         data: RuntimeDataDirectories,
-        token: String,
         pidFile: Path,
-        command: UbuntuCommand? = null,
+        command: UbuntuCommand,
     ): String = chrootLaunchScript(
         rootfs = runtime.rootfs,
         home = data.home,
-        dshHome = data.dshHome,
         workspaces = data.workspaces,
         pidFile = pidFile,
-        token = token,
-        guestCommand = command?.arguments?.first() ?: runtime.manifest.entrypoint.guestCommand,
-        arguments = command?.arguments?.drop(1).orEmpty(),
-        environment = command?.environment.orEmpty(),
+        guestCommand = command.arguments.first(),
+        arguments = command.arguments.drop(1),
+        environment = command.environment,
+        bindings = command.bindings,
+        workingDirectory = command.workingDirectory,
         appUid = android.os.Process.myUid(),
         appGid = android.system.Os.getgid(),
         appPid = android.os.Process.myPid(),
@@ -397,14 +370,12 @@ class RuntimeProcessSupervisor(
         val dataRoot = appContext.filesDir.toPath().resolve("linux-data")
         return RuntimeDataDirectories(
             home = dataRoot.resolve("home"),
-            dshHome = dataRoot.resolve("dsh-home"),
             workspaces = dataRoot.resolve("workspaces"),
             temporary = appContext.cacheDir.toPath().resolve("proot"),
             prorootTemporary = appContext.filesDir.toPath().resolve("proroot-tmp"),
         ).also { directories ->
             listOf(
                 directories.home,
-                directories.dshHome,
                 directories.workspaces,
                 directories.temporary,
                 directories.prorootTemporary,
@@ -445,24 +416,20 @@ class RuntimeProcessSupervisor(
         return path
     }
 
-    private fun randomToken(): String {
-        val bytes = ByteArray(TOKEN_BYTES)
-        SecureRandom().nextBytes(bytes)
-        return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-    }
+
 }
 
 internal fun prorootLaunchCommand(
     proroot: Path,
     rootfs: Path,
     home: Path,
-    dshHome: Path,
     workspaces: Path,
     temporary: Path,
-    token: String,
     guestCommand: String,
     arguments: List<String> = emptyList(),
     environment: Map<String, String> = emptyMap(),
+    bindings: Map<String, Path> = emptyMap(),
+    workingDirectory: String = "/workspace",
 ): List<String> = buildList {
     add(proroot.toString())
     add("-r")
@@ -471,14 +438,16 @@ internal fun prorootLaunchCommand(
     add("--link2symlink")
     listOf(
         home to "/root",
-        dshHome to "/dsh-home",
         workspaces to "/workspace",
     ).forEach { (source, target) ->
         add("-b")
         add("$source:$target")
     }
+    bindings.forEach { (target, source) ->
+        add("-b"); add("$source:$target")
+    }
     add("-w")
-    add("/workspace")
+    add(workingDirectory)
     add("/usr/bin/env")
     add("-i")
     add("PROROOT_TMP_DIR=$temporary")
@@ -489,9 +458,6 @@ internal fun prorootLaunchCommand(
     add("TERM=xterm-256color")
     add("LANG=C.UTF-8")
     add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-    add("DSH_HOME=/dsh-home")
-    add("DSH_PERMISSION_MODE=danger-full-access")
-    add("DSH_MOBILE_TOKEN=$token")
     environment.forEach { (name, value) -> add("$name=$value") }
     add(guestCommand)
     addAll(arguments)
@@ -500,16 +466,16 @@ internal fun prorootLaunchCommand(
 internal fun chrootLaunchScript(
     rootfs: Path,
     home: Path,
-    dshHome: Path,
     workspaces: Path,
     pidFile: Path,
-    token: String,
     guestCommand: String,
     appUid: Int,
     appGid: Int,
     appPid: Int,
     arguments: List<String> = emptyList(),
     environment: Map<String, String> = emptyMap(),
+    bindings: Map<String, Path> = emptyMap(),
+    workingDirectory: String = "/workspace",
 ): String = """#!/system/bin/sh
 set -u
 
@@ -527,7 +493,6 @@ rm -f "${'$'}0"
 
 ROOTFS=${shellQuote(rootfs.toString())}
 HOME_SOURCE=${shellQuote(home.toString())}
-DSH_HOME_SOURCE=${shellQuote(dshHome.toString())}
 WORKSPACES_SOURCE=${shellQuote(workspaces.toString())}
 SESSION_PID=${shellQuote(pidFile.toString())}
 APP_OWNER=${shellQuote("$appUid:$appGid")}
@@ -546,7 +511,7 @@ cleanup() {
         wait "${'$'}WATCHDOG_PID" 2>/dev/null || true
     fi
     umount "${'$'}ROOTFS/workspace" 2>/dev/null || true
-    umount "${'$'}ROOTFS/dsh-home" 2>/dev/null || true
+    ${bindings.keys.reversed().joinToString("\n    ") { "umount " + shellQuote(rootfs.resolve(it.removePrefix("/")).toString()) + " 2>/dev/null || true" }}
     umount "${'$'}ROOTFS/root" 2>/dev/null || true
     umount "${'$'}ROOTFS/sys" 2>/dev/null || true
     umount "${'$'}ROOTFS/proc" 2>/dev/null || true
@@ -554,7 +519,7 @@ cleanup() {
     umount "${'$'}ROOTFS/dev/shm" 2>/dev/null || true
     umount "${'$'}ROOTFS/dev" 2>/dev/null || true
     chown -R "${'$'}APP_OWNER" "${'$'}ROOTFS" "${'$'}HOME_SOURCE" \
-        "${'$'}DSH_HOME_SOURCE" "${'$'}WORKSPACES_SOURCE" 2>/dev/null || true
+        "${'$'}WORKSPACES_SOURCE" ${bindings.values.joinToString(" ") { shellQuote(it.toString()) }} 2>/dev/null || true
     rm -f "${'$'}SESSION_PID"
 }
 
@@ -570,22 +535,25 @@ echo "${'$'}${'$'}" > "${'$'}SESSION_PID"
 (while kill -0 "${'$'}APP_PID" 2>/dev/null; do sleep 2; done; kill -TERM "${'$'}${'$'}") &
 WATCHDOG_PID="${'$'}!"
 mkdir -p "${'$'}ROOTFS/dev" "${'$'}ROOTFS/proc" "${'$'}ROOTFS/sys" \
-    "${'$'}ROOTFS/root" "${'$'}ROOTFS/dsh-home" "${'$'}ROOTFS/workspace"
+    "${'$'}ROOTFS/root" "${'$'}ROOTFS/workspace"
 mount --bind /dev "${'$'}ROOTFS/dev" || exit 120
 [ ! -d /dev/pts ] || mount --bind /dev/pts "${'$'}ROOTFS/dev/pts" || exit 120
 [ ! -d /dev/shm ] || mount --bind /dev/shm "${'$'}ROOTFS/dev/shm" || exit 120
 mount -t proc proc "${'$'}ROOTFS/proc" || exit 121
 mount --bind /sys "${'$'}ROOTFS/sys" || exit 122
 mount --bind "${'$'}HOME_SOURCE" "${'$'}ROOTFS/root" || exit 123
-mount --bind "${'$'}DSH_HOME_SOURCE" "${'$'}ROOTFS/dsh-home" || exit 124
 mount --bind "${'$'}WORKSPACES_SOURCE" "${'$'}ROOTFS/workspace" || exit 125
+
+${bindings.entries.joinToString("\n") { (target, source) ->
+    val destination = shellQuote(rootfs.resolve(target.removePrefix("/")).toString())
+    "mkdir -p $destination\nmount --bind ${shellQuote(source.toString())} $destination || exit 124"
+}}
 
 chroot "${'$'}ROOTFS" /usr/bin/env -i \
     HOME=/root USER=root LOGNAME=root SHELL=/bin/bash TERM=xterm-256color LANG=C.UTF-8 \
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-    DSH_HOME=/dsh-home DSH_PERMISSION_MODE=danger-full-access \
-    DSH_MOBILE_TOKEN=${shellQuote(token)} \
     ${environment.entries.joinToString(" ") { (name, value) -> shellQuote("$name=$value") }} \
+    /bin/sh -c ${shellQuote("cd \"\$1\" && shift && exec \"\$@\"")} ubuntu-command ${shellQuote(workingDirectory)} \
     ${(listOf(guestCommand) + arguments).joinToString(" ", transform = ::shellQuote)} &
 CHILD_PID="${'$'}!"
 wait "${'$'}CHILD_PID"
@@ -606,17 +574,13 @@ internal fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''
 
 private data class RuntimeDataDirectories(
     val home: Path,
-    val dshHome: Path,
     val workspaces: Path,
     val temporary: Path,
     val prorootTemporary: Path,
 )
 
-private val READY_PATTERN = Regex("dsh-mobile gateway: http://127\\.0\\.0\\.1:(\\d+)")
-private const val TOKEN_BYTES = 32
-private const val START_TIMEOUT_MILLIS = 90_000L
 private const val STOP_POLL_ATTEMPTS = 30
 private const val CHROOT_STOP_POLL_ATTEMPTS = 300
 private const val STOP_POLL_MILLIS = 100L
 private const val MAX_LOG_LINE_CHARS = 4_096
-private const val LOG_TAG = "DshRuntime"
+private const val LOG_TAG = "UbuntuRuntime"

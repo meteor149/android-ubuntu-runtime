@@ -26,7 +26,8 @@ class MainActivity : Activity() {
                 val ubuntu = UbuntuEnvironment(applicationContext)
                 ubuntu.install()
                 val result = ubuntu.execute(UbuntuCommand(listOf("/bin/bash", "-lc",
-                    "cat /etc/os-release; uname -m; printf '%s\\n' \"\$LIBRARY_TEST\""),
+                    "test ! -e /opt/node && test ! -e /opt/dsh && ! command -v node && " +
+                    "cat /etc/os-release && uname -m && printf '%s\\n' \"\$LIBRARY_TEST\""),
                     mapOf("LIBRARY_TEST" to "maven-consumer-ok")))
                 check(result.exitCode == 0) { "Ubuntu exited with ${result.exitCode}: ${result.output}" }
                 check("maven-consumer-ok" in result.output) { "Guest environment was not preserved" }

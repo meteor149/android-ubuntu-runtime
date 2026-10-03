@@ -12,11 +12,10 @@ class ChrootLaunchScriptTest {
         val script = chrootLaunchScript(
             rootfs = Paths.get("/data/user/0/app/files/runtime/rootfs"),
             home = home,
-            dshHome = Paths.get("/data/user/0/app/files/linux-data/dsh-home"),
             workspaces = Paths.get("/data/user/0/app/files/linux-data/workspaces"),
             pidFile = Paths.get("/data/user/0/app/cache/chroot/session.pid"),
-            token = "token-value",
-            guestCommand = "/usr/local/bin/dsh-mobile-gateway",
+            environment = mapOf("TEST_TOKEN" to "token-value"),
+            guestCommand = "/bin/bash",
             appUid = 10123,
             appGid = 10123,
             appPid = 4567,
@@ -37,7 +36,7 @@ class ChrootLaunchScriptTest {
         assertContains(script, "mount --make-rprivate /")
         assertContains(script, "chown -R \"\$APP_OWNER\" \"\$ROOTFS\"")
         assertContains(script, "chroot \"\$ROOTFS\" /usr/bin/env -i")
-        assertContains(script, "DSH_MOBILE_TOKEN='token-value'")
+        assertContains(script, shellQuote("TEST_TOKEN=token-value"))
     }
 
     @Test

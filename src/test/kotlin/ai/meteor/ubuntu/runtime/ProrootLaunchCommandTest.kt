@@ -12,18 +12,16 @@ class ProrootLaunchCommandTest {
         val proroot = Paths.get("/native/libproroot.so")
         val rootfs = Paths.get("/data/runtime/rootfs")
         val home = Paths.get("/data/linux-data/home")
-        val dshHome = Paths.get("/data/linux-data/dsh-home")
         val workspaces = Paths.get("/data/linux-data/workspaces")
         val temporary = Paths.get("/data/files/proroot-tmp")
         val command = prorootLaunchCommand(
             proroot = proroot,
             rootfs = rootfs,
             home = home,
-            dshHome = dshHome,
             workspaces = workspaces,
             temporary = temporary,
-            token = "token-value",
-            guestCommand = "/usr/local/bin/dsh-mobile-gateway",
+            environment = mapOf("TEST_TOKEN" to "token-value"),
+            guestCommand = "/bin/bash",
         )
 
         assertEquals(proroot.toString(), command.first())
@@ -33,8 +31,8 @@ class ProrootLaunchCommandTest {
         assertTrue("-0" in command)
         assertTrue("--link2symlink" in command)
         assertTrue("PROROOT_TMP_DIR=$temporary" in command)
-        assertTrue("DSH_MOBILE_TOKEN=token-value" in command)
-        assertEquals("/usr/local/bin/dsh-mobile-gateway", command.last())
+        assertTrue("TEST_TOKEN=token-value" in command)
+        assertEquals("/bin/bash", command.last())
         assertFalse("--kill-on-exit" in command)
         assertFalse("--sysvipc" in command)
     }

@@ -29,14 +29,10 @@ class RuntimeManifestTest {
                 "prorootBridgeLibrary": "libproroot-bridge.so",
                 "prorootLinkerLibrary": "libproroot-linker.so",
                 "prorootStubLoaderLibrary": "libproroot-stub-loader.so",
-                "guestCommand": "/usr/local/bin/dsh-mobile-gateway"
+                "guestCommand": "/bin/bash"
               },
               "sources": {
                 "ubuntuImage": "ubuntu:24.04",
-                "nodeVersion": "24.14.1",
-                "nodeDistributionSha256": "node-sha256",
-                "dshVersion": "0.1.0-rc.6",
-                "dshPackageIntegrity": "sha512-integrity",
                 "termuxProotVersion": "5.1.107.89",
                 "termuxProotCommit": "proot-commit",
                 "termuxPackagesCommit": "packages-commit",
@@ -45,9 +41,6 @@ class RuntimeManifestTest {
             }
             """.trimIndent(),
         )
-
-        assertEquals("node-sha256", manifest.sources?.nodeDistributionSha256)
-        assertEquals("sha512-integrity", manifest.sources?.dshPackageIntegrity)
         assertEquals("1.2.8", manifest.sources?.prorootVersion)
         assertEquals(
             listOf(
