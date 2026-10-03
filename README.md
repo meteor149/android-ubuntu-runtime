@@ -29,9 +29,10 @@ A diagnostic AAR can be built without artifacts, but cannot be published.
 This AAR bundles the PRoot launcher, loader, shared-memory library and allocation
 library. Native filenames use the `libubuntu_` prefix; these are unchanged upstream
 programs apart from dependency-name adjustment for Android packaging. It does not
-bundle an Ubuntu filesystem. Optional proroot execution accepts complete-app
-binaries supplied by the host; those binaries are excluded from this AAR because
-their license limits redistribution to complete application packages.
+bundle an Ubuntu filesystem. Source builds support `RuntimeMode.Proot` and
+`RuntimeMode.Chroot`; the runtime descriptor uses schema 3. The published 0.2.0
+artifact retains its original API and descriptor; these source changes will only
+reach Maven consumers in a future release.
 
 ## Publication
 

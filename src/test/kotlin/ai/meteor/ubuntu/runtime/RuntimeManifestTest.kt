@@ -10,7 +10,7 @@ class RuntimeManifestTest {
         val manifest = Json.decodeFromString<RuntimeManifest>(
             """
             {
-              "schemaVersion": 2,
+              "schemaVersion": 3,
               "available": true,
               "runtimeVersion": "ubuntu-24.04-1",
               "abi": "arm64-v8a",
@@ -24,33 +24,21 @@ class RuntimeManifestTest {
               "entrypoint": {
                 "prootLibrary": "libubuntu_proot.so",
                 "loaderLibrary": "libubuntu_proot_loader.so",
-                "prorootLibrary": "libproroot.so",
-                "prorootRuntimeLibrary": "libproroot-runtime.so",
-                "prorootBridgeLibrary": "libproroot-bridge.so",
-                "prorootLinkerLibrary": "libproroot-linker.so",
-                "prorootStubLoaderLibrary": "libproroot-stub-loader.so",
                 "guestCommand": "/bin/bash"
               },
               "sources": {
                 "ubuntuImage": "ubuntu:24.04",
                 "termuxProotVersion": "5.1.107.89",
                 "termuxProotCommit": "proot-commit",
-                "termuxPackagesCommit": "packages-commit",
-                "prorootVersion": "1.2.8"
+                "termuxPackagesCommit": "packages-commit"
               }
             }
             """.trimIndent(),
         )
-        assertEquals("1.2.8", manifest.sources?.prorootVersion)
-        assertEquals(
-            listOf(
-                "libproroot.so",
-                "libproroot-runtime.so",
-                "libproroot-bridge.so",
-                "libproroot-linker.so",
-                "libproroot-stub-loader.so",
-            ),
-            manifest.entrypoint.prorootLibraries,
-        )
+        assertEquals(3, manifest.schemaVersion)
+        assertEquals("packages-commit", manifest.sources?.termuxPackagesCommit)
+        assertEquals("libubuntu_proot.so", manifest.entrypoint.prootLibrary)
+        assertEquals("libubuntu_proot_loader.so", manifest.entrypoint.loaderLibrary)
+        assertEquals("/bin/bash", manifest.entrypoint.guestCommand)
     }
 }

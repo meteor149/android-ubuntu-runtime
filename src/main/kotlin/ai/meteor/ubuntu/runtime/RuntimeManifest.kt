@@ -33,22 +33,8 @@ data class NativeArtifact(
 data class RuntimeEntrypoint(
     val prootLibrary: String,
     val loaderLibrary: String,
-    val prorootLibrary: String,
-    val prorootRuntimeLibrary: String,
-    val prorootBridgeLibrary: String,
-    val prorootLinkerLibrary: String,
-    val prorootStubLoaderLibrary: String,
     val guestCommand: String,
-) {
-    val prorootLibraries: List<String>
-        get() = listOf(
-            prorootLibrary,
-            prorootRuntimeLibrary,
-            prorootBridgeLibrary,
-            prorootLinkerLibrary,
-            prorootStubLoaderLibrary,
-        )
-}
+)
 
 @Serializable
 data class RuntimeSources(
@@ -56,7 +42,6 @@ data class RuntimeSources(
     val termuxProotVersion: String = "",
     val termuxProotCommit: String = "",
     val termuxPackagesCommit: String = "",
-    val prorootVersion: String = "",
 )
 
 data class InstalledRuntime(

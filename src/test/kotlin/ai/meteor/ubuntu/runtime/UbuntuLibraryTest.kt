@@ -10,9 +10,9 @@ import kotlinx.serialization.json.Json
 
 class UbuntuLibraryTest {
     private fun manifest(available: Boolean = true, abi: String = "arm64-v8a") = RuntimeManifest(
-        schemaVersion = 2, available = available, runtimeVersion = "test-image", abi = abi,
+        schemaVersion = 3, available = available, runtimeVersion = "test-image", abi = abi,
         rootfs = RootfsArtifact("rootfs.tar.zst", "hash", 100, 1000),
-        entrypoint = RuntimeEntrypoint("proot", "loader", "proroot", "runtime", "bridge", "linker", "stub", "/bin/bash"),
+        entrypoint = RuntimeEntrypoint("proot", "loader", "/bin/bash"),
     )
 
     private fun image(available: Boolean = true, architecture: String = "arm64") = UbuntuImageManifest(

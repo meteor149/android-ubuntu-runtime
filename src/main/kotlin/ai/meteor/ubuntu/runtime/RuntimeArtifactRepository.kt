@@ -20,10 +20,7 @@ class RuntimeArtifactRepository(
                 json.decodeFromString<UbuntuImageManifest>(it.readText())
             }.also { require(it.schemaVersion == 1) { "Unsupported Ubuntu image descriptor schema" } }
         } else null
-        val proroot = if ("ubuntu-proroot-manifest.json" in assets.list("runtime").orEmpty()) {
-            readAsset("runtime/ubuntu-proroot-manifest.json").takeIf { it.available }
-        } else null
-        return combineRuntimeManifests(engine, image, proroot)
+        return combineRuntimeManifests(engine, image)
     }
 
     private fun readAsset(name: String): RuntimeManifest = assets
@@ -41,14 +38,13 @@ class RuntimeArtifactRepository(
     }
 
     private companion object {
-        const val SUPPORTED_SCHEMA_VERSION = 2
+        const val SUPPORTED_SCHEMA_VERSION = 3
     }
 }
 
 internal fun combineRuntimeManifests(
     engine: RuntimeManifest,
     image: UbuntuImageManifest?,
-    proroot: RuntimeManifest? = null,
 ): RuntimeManifest {
     if (image != null) require(image.schemaVersion == 1) { "Unsupported Ubuntu image descriptor schema" }
     if (engine.available && image?.available == true) {
@@ -57,12 +53,10 @@ internal fun combineRuntimeManifests(
         }
         requireNotNull(image.archive) { "An available Ubuntu image must declare its archive" }
     }
-    if (proroot != null) require(proroot.abi == engine.abi) { "proroot and engine ABIs differ" }
     return engine.copy(
         available = engine.available && image?.available == true,
         runtimeVersion = image?.imageVersion ?: engine.runtimeVersion,
         rootfs = image?.archive,
-        nativeLibraries = engine.nativeLibraries + proroot?.nativeLibraries.orEmpty(),
         sources = engine.sources?.copy(ubuntuImage = image?.source?.ubuntuImage.orEmpty()),
     )
 }

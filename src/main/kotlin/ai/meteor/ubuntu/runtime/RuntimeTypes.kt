@@ -2,7 +2,6 @@ package ai.meteor.ubuntu.runtime
 
 enum class RuntimeMode {
     Proot,
-    Proroot,
     Chroot,
 }
 

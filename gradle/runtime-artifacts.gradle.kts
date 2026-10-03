@@ -26,7 +26,11 @@ tasks.register("prepareRuntimeAssets") {
         val sourceManifest = dist.resolve("runtime-manifest.json").takeIf { it.isFile } ?: fallback
         @Suppress("UNCHECKED_CAST")
         val document = (JsonSlurper().parse(sourceManifest) as Map<String, Any?>).toMutableMap()
-        check(document["schemaVersion"] == 2) { "Unsupported runtime manifest schema" }
+        check(document["schemaVersion"] == 3) { "Unsupported runtime manifest schema" }
+        val entrypoint = document["entrypoint"] as? Map<*, *>
+        check(entrypoint?.keys == setOf("prootLibrary", "loaderLibrary", "guestCommand")) {
+            "The engine manifest must declare only its supported entrypoint fields"
+        }
         val available = document["available"] == true
         @Suppress("UNCHECKED_CAST")
         val libraries = (document["nativeLibraries"] as? List<Map<String, String>>).orEmpty()

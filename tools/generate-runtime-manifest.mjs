@@ -25,7 +25,7 @@ for (const [file, packagedName] of nativeFiles) {
 }
 
 const manifest = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   available: true,
   runtimeVersion: required(versions, 'RUNTIME_VERSION'),
   abi: 'arm64-v8a',
@@ -33,11 +33,6 @@ const manifest = {
   entrypoint: {
     prootLibrary: 'libubuntu_proot.so',
     loaderLibrary: 'libubuntu_proot_loader.so',
-    prorootLibrary: 'libproroot.so',
-    prorootRuntimeLibrary: 'libproroot-runtime.so',
-    prorootBridgeLibrary: 'libproroot-bridge.so',
-    prorootLinkerLibrary: 'libproroot-linker.so',
-    prorootStubLoaderLibrary: 'libproroot-stub-loader.so',
     guestCommand: '/bin/bash',
   },
   sources: {

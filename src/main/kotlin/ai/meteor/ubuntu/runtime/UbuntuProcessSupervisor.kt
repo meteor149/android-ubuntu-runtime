@@ -51,7 +51,6 @@ class UbuntuProcessSupervisor(
 
         val child = when (mode) {
             RuntimeMode.Proot -> startProot(runtime, data, command)
-            RuntimeMode.Proroot -> startProroot(runtime, data, command)
             RuntimeMode.Chroot -> startChroot(runtime, data, command)
         }
         process = child
@@ -106,7 +105,6 @@ class UbuntuProcessSupervisor(
         val data = prepareDataDirectories()
         val child = when (mode) {
             RuntimeMode.Proot -> startProot(runtime, data, command)
-            RuntimeMode.Proroot -> startProroot(runtime, data, command)
             RuntimeMode.Chroot -> startChroot(runtime, data, command)
         }
         process = child
@@ -231,43 +229,6 @@ class UbuntuProcessSupervisor(
         return rootAccess.start(command)
     }
 
-    private fun startProroot(
-        runtime: InstalledRuntime,
-        data: RuntimeDataDirectories,
-        command: UbuntuCommand,
-    ): Process {
-        val nativeDirectory = Paths.get(appContext.applicationInfo.nativeLibraryDir)
-        val entrypoint = runtime.manifest.entrypoint
-        val proroot = requireExecutable(nativeDirectory, entrypoint.prorootLibrary)
-        entrypoint.prorootLibraries.drop(1).forEach { name ->
-            requireNativeLibrary(nativeDirectory, name)
-        }
-        return startRootless(ProcessBuilder(
-            prorootLaunchCommand(
-                proroot = proroot,
-                rootfs = runtime.rootfs,
-                home = data.home,
-                workspaces = data.workspaces,
-                temporary = data.prorootTemporary,
-                guestCommand = command.arguments.first(),
-                arguments = command.arguments.drop(1),
-                environment = command.environment,
-                bindings = command.bindings,
-                workingDirectory = command.workingDirectory,
-            ),
-        )
-            .directory(runtime.runtimeDirectory.toFile())
-            .redirectErrorStream(true)
-            .apply {
-                environment().clear()
-                environment()["HOME"] = data.home.toString()
-                environment()["TMPDIR"] = data.prorootTemporary.toString()
-                environment()["PROROOT_TMP_DIR"] = data.prorootTemporary.toString()
-                environment()["LANG"] = "C.UTF-8"
-            }
-        )
-    }
-
     private fun startRootless(builder: ProcessBuilder): Process {
         val control = appContext.cacheDir.toPath().resolve("runtime-processes")
         Files.createDirectories(control)
@@ -372,13 +333,11 @@ class UbuntuProcessSupervisor(
             home = dataRoot.resolve("home"),
             workspaces = dataRoot.resolve("workspaces"),
             temporary = appContext.cacheDir.toPath().resolve("proot"),
-            prorootTemporary = appContext.filesDir.toPath().resolve("proroot-tmp"),
         ).also { directories ->
             listOf(
                 directories.home,
                 directories.workspaces,
                 directories.temporary,
-                directories.prorootTemporary,
             )
                 .forEach(Files::createDirectories)
         }
@@ -408,59 +367,6 @@ class UbuntuProcessSupervisor(
         return path
     }
 
-    private fun requireNativeLibrary(directory: Path, name: String): Path {
-        val path = directory.resolve(name)
-        require(Files.isRegularFile(path) && Files.isReadable(path)) {
-            "Required native library is not available in the APK: $name"
-        }
-        return path
-    }
-
-
-}
-
-internal fun prorootLaunchCommand(
-    proroot: Path,
-    rootfs: Path,
-    home: Path,
-    workspaces: Path,
-    temporary: Path,
-    guestCommand: String,
-    arguments: List<String> = emptyList(),
-    environment: Map<String, String> = emptyMap(),
-    bindings: Map<String, Path> = emptyMap(),
-    workingDirectory: String = "/workspace",
-): List<String> = buildList {
-    add(proroot.toString())
-    add("-r")
-    add(rootfs.toString())
-    add("-0")
-    add("--link2symlink")
-    listOf(
-        home to "/root",
-        workspaces to "/workspace",
-    ).forEach { (source, target) ->
-        add("-b")
-        add("$source:$target")
-    }
-    bindings.forEach { (target, source) ->
-        add("-b"); add("$source:$target")
-    }
-    add("-w")
-    add(workingDirectory)
-    add("/usr/bin/env")
-    add("-i")
-    add("PROROOT_TMP_DIR=$temporary")
-    add("HOME=/root")
-    add("USER=root")
-    add("LOGNAME=root")
-    add("SHELL=/bin/bash")
-    add("TERM=xterm-256color")
-    add("LANG=C.UTF-8")
-    add("PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
-    environment.forEach { (name, value) -> add("$name=$value") }
-    add(guestCommand)
-    addAll(arguments)
 }
 
 internal fun chrootLaunchScript(
@@ -576,7 +482,6 @@ private data class RuntimeDataDirectories(
     val home: Path,
     val workspaces: Path,
     val temporary: Path,
-    val prorootTemporary: Path,
 )
 
 private const val STOP_POLL_ATTEMPTS = 30
