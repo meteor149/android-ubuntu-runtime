@@ -5,7 +5,7 @@ plugins {
     kotlin("android") version "2.3.21"
     kotlin("plugin.serialization") version "2.3.21"
     `maven-publish`
-    id("com.vanniktech.maven.publish.base") version "0.34.0"
+    id("com.vanniktech.maven.publish.base") version "0.35.0"
 }
 
 group = providers.gradleProperty("UBUNTU_MAVEN_GROUP").get()
@@ -13,7 +13,7 @@ version = providers.gradleProperty("UBUNTU_RUNTIME_VERSION").get()
 // Central publishing is opt-in so local builds do not require credentials or signing keys.
 if (providers.gradleProperty("MAVEN_CENTRAL_PUBLISH").getOrElse("false").toBoolean()) {
     configure<MavenPublishBaseExtension> {
-        publishToMavenCentral()
+        publishToMavenCentral(automaticRelease = true, validateDeployment = true)
         signAllPublications()
         coordinates(project.group.toString(), providers.gradleProperty("UBUNTU_ARTIFACT_ID").get(), project.version.toString())
     }

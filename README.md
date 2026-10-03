@@ -51,7 +51,7 @@ The Maven Central workflow runs on manual dispatch or a published GitHub Release
 Release tags must match `v<version>`. It uses `MAVEN_CENTRAL_USERNAME`,
 `MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY_ID`, `SIGNING_PASSWORD` and `GPG_KEY_CONTENT`.
 Keys are loaded in memory. The workflow uploads, validates and releases a signed
-Central deployment; ordinary source pushes only run the build workflow.
+Central deployment and waits for Central to confirm publication; ordinary source pushes only run the build workflow.
 
 For direct Central publication, provide the corresponding
 `ORG_GRADLE_PROJECT_mavenCentral*` and `ORG_GRADLE_PROJECT_signingInMemory*`
