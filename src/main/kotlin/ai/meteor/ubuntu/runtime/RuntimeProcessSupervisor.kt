@@ -4,7 +4,12 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.util.Base64
 import android.util.Log
+import android.system.ErrnoException
+import android.system.Os
+import android.system.OsConstants
+import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
@@ -18,6 +23,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
@@ -33,8 +39,10 @@ class RuntimeProcessSupervisor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var process: Process? = null
     private var outputJob: Job? = null
+    private var exitJob: Job? = null
     private var runningMode: RuntimeMode? = null
     private var chrootPidFile: Path? = null
+    private var rootlessPidFile: Path? = null
 
     suspend fun start(
         runtime: InstalledRuntime,
@@ -55,29 +63,45 @@ class RuntimeProcessSupervisor(
         }
         process = child
         runningMode = mode
+        val groupFile = rootlessPidFile
 
         outputJob = scope.launch {
-            child.inputStream.bufferedReader().useLines { lines ->
-                lines.forEach { rawLine ->
-                    val line = rawLine.take(MAX_LOG_LINE_CHARS)
-                    Log.i(LOG_TAG, line)
-                    onLog(line)
-                    READY_PATTERN.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { port ->
-                        if (!readiness.isCompleted) readiness.complete(port)
+            try {
+                child.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { rawLine ->
+                        val line = rawLine.take(MAX_LOG_LINE_CHARS)
+                        Log.i(LOG_TAG, line)
+                        onLog(line)
+                        READY_PATTERN.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { port ->
+                            if (!readiness.isCompleted) readiness.complete(port)
+                        }
                     }
+                }
+            } catch (error: IOException) {
+                // Android closes process pipes during destroy(), interrupting a blocking read.
+                if (currentCoroutineContext().isActive && child.isAlive) {
+                    Log.e(LOG_TAG, "Runtime output reader failed", error)
+                    if (!readiness.isCompleted) readiness.completeExceptionally(error)
+                    child.destroy()
                 }
             }
         }
-        scope.launch {
+        exitJob = scope.launch {
             val exitCode = child.waitFor()
+            // A tracer can exit before its guest descendants; release the whole owned session.
+            signalRootlessGroup(groupFile, OsConstants.SIGKILL)
+            groupFile?.let(Files::deleteIfExists)
             Log.i(LOG_TAG, "${mode.name} process exited with code $exitCode")
             if (!readiness.isCompleted) readiness.completeExceptionally(
                 IllegalStateException("DSH exited before becoming ready (exit=$exitCode)"),
             )
-            process = null
-            runningMode = null
-            chrootPidFile = null
-            onExit(exitCode)
+            if (process === child) {
+                process = null
+                runningMode = null
+                chrootPidFile = null
+                rootlessPidFile = null
+                onExit(exitCode)
+            }
         }
 
         try {
@@ -108,6 +132,7 @@ class RuntimeProcessSupervisor(
         runningMode = mode
         // Start the watcher before the blocking read, so immediate cancellation still stops the child.
         val pidFile = chrootPidFile
+        val rootlessGroup = rootlessPidFile
         val cancellation = CoroutineScope(currentCoroutineContext() + Dispatchers.Default).launch(
             start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED,
         ) {
@@ -118,6 +143,7 @@ class RuntimeProcessSupervisor(
                     if (mode == RuntimeMode.Chroot) {
                         pidFile?.let { rootAccess.execute(buildChrootStopCommand(it)) }
                     } else {
+                        signalRootlessGroup(rootlessGroup, OsConstants.SIGTERM)
                         child.destroy()
                     }
                 }
@@ -133,20 +159,25 @@ class RuntimeProcessSupervisor(
                 stop()
             }
             child.inputStream.close()
+            rootlessGroup?.let(Files::deleteIfExists)
             process = null
             runningMode = null
             chrootPidFile = null
+            rootlessPidFile = null
         }
     }
 
     suspend fun stop() = withContext(Dispatchers.IO) {
         val child = process ?: return@withContext
         val mode = runningMode
+        val groupFile = rootlessPidFile
+        outputJob?.cancel()
         if (mode == RuntimeMode.Chroot) {
             chrootPidFile?.let { pidFile ->
                 rootAccess.execute(buildChrootStopCommand(pidFile))
             }
         } else {
+            signalRootlessGroup(groupFile, OsConstants.SIGTERM)
             child.destroy()
         }
         val pollAttempts = if (mode == RuntimeMode.Chroot) {
@@ -155,10 +186,15 @@ class RuntimeProcessSupervisor(
             STOP_POLL_ATTEMPTS
         }
         repeat(pollAttempts) {
-            if (!child.isAlive) return@withContext
+            if (!child.isAlive && !signalRootlessGroup(groupFile, 0)) {
+                exitJob?.join()
+                return@withContext
+            }
             delay(STOP_POLL_MILLIS)
         }
         child.destroyForcibly()
+        signalRootlessGroup(groupFile, OsConstants.SIGKILL)
+        exitJob?.join()
         outputJob?.cancel()
         process = null
         runningMode = null
@@ -178,7 +214,7 @@ class RuntimeProcessSupervisor(
         val nativeDirectory = Paths.get(appContext.applicationInfo.nativeLibraryDir)
         val proot = requireExecutable(nativeDirectory, runtime.manifest.entrypoint.prootLibrary)
         val loader = requireExecutable(nativeDirectory, runtime.manifest.entrypoint.loaderLibrary)
-        return ProcessBuilder(buildProotCommand(runtime, proot, data, token, command))
+        return startRootless(ProcessBuilder(buildProotCommand(runtime, proot, data, token, command))
             .directory(runtime.runtimeDirectory.toFile())
             .redirectErrorStream(true)
             .apply {
@@ -190,7 +226,7 @@ class RuntimeProcessSupervisor(
                 environment()["LD_LIBRARY_PATH"] = nativeDirectory.toString()
                 environment()["LANG"] = "C.UTF-8"
             }
-            .start()
+        )
     }
 
     private fun startChroot(
@@ -199,6 +235,7 @@ class RuntimeProcessSupervisor(
         token: String,
         command: UbuntuCommand? = null,
     ): Process {
+        rootlessPidFile = null
         val controlDirectory = appContext.cacheDir.toPath().resolve("chroot")
         Files.createDirectories(controlDirectory)
         val script = controlDirectory.resolve("run-${System.nanoTime()}.sh")
@@ -227,7 +264,7 @@ class RuntimeProcessSupervisor(
         entrypoint.prorootLibraries.drop(1).forEach { name ->
             requireNativeLibrary(nativeDirectory, name)
         }
-        return ProcessBuilder(
+        return startRootless(ProcessBuilder(
             prorootLaunchCommand(
                 proroot = proroot,
                 rootfs = runtime.rootfs,
@@ -250,7 +287,38 @@ class RuntimeProcessSupervisor(
                 environment()["PROROOT_TMP_DIR"] = data.prorootTemporary.toString()
                 environment()["LANG"] = "C.UTF-8"
             }
-            .start()
+        )
+    }
+
+    private fun startRootless(builder: ProcessBuilder): Process {
+        val control = appContext.cacheDir.toPath().resolve("runtime-processes")
+        Files.createDirectories(control)
+        val pidFile = control.resolve("session-${System.nanoTime()}.pid")
+        rootlessPidFile = pidFile
+        val command = builder.command().toList()
+        builder.command(listOf(
+            "/system/bin/setsid", "-w", "/system/bin/sh", "-c",
+            "echo \$\$ > \"\$1\"; shift; exec \"\$@\"",
+            "runtime-session", pidFile.toString(),
+        ) + command)
+        return builder.start()
+    }
+
+    /** Each rootless launch owns a separate session, including the gateway's child processes. */
+    private fun signalRootlessGroup(pidFile: Path?, signal: Int): Boolean {
+        val pid = try {
+            pidFile?.let { String(Files.readAllBytes(it), Charsets.UTF_8).trim().toIntOrNull() }
+        } catch (_: NoSuchFileException) {
+            null // The exit watcher may have already removed this session's control file.
+        } ?: return false
+        if (pid <= 1) return false
+        return try {
+            Os.kill(-pid, signal)
+            true
+        } catch (error: ErrnoException) {
+            if (error.errno != OsConstants.ESRCH) throw error
+            false
+        }
     }
 
     private fun buildProotCommand(

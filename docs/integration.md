@@ -6,7 +6,7 @@
 ```kotlin
 dependencies {
     implementation("io.github.meteor149:ubuntu-runtime:0.1.0")
-    implementation("io.github.meteor149:ubuntu-image:24.04-dsh-0.1.0-rc.6.10")
+    implementation("io.github.meteor149:ubuntu-image:24.04-dsh-0.1.0-rc.6.11")
 }
 
 android {

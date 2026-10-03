@@ -28,5 +28,5 @@ kotlin { jvmToolchain(17) }
 
 dependencies {
     implementation("io.github.meteor149:ubuntu-runtime:${providers.gradleProperty("ubuntuRuntimeVersion").getOrElse("0.1.0")}")
-    implementation("io.github.meteor149:ubuntu-image:${providers.gradleProperty("ubuntuImageVersion").getOrElse("24.04-dsh-0.1.0-rc.6.10")}")
+    implementation("io.github.meteor149:ubuntu-image:${providers.gradleProperty("ubuntuImageVersion").getOrElse("24.04-dsh-0.1.0-rc.6.11")}")
 }
