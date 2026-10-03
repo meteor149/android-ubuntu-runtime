@@ -1,0 +1,16 @@
+.gradle/
+.kotlin/
+.idea/
+**/build/
+local.properties
+*.iml
+runtime/dist/*
+!runtime/dist/.gitkeep
+runtime/.work/
+
+# Local Maven credentials and private signing keys
+private-key.asc
+secret-key.asc
+secring.gpg
+*.keystore
+*.jks

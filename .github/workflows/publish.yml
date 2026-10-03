@@ -1,0 +1,77 @@
+name: Publish to Maven Central
+on:
+  workflow_dispatch:
+  release:
+    types: [released, prereleased]
+permissions:
+  contents: read
+concurrency:
+  group: maven-central
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: android-actions/setup-android@v4
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v4
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+      - name: Restore runtime artifacts
+        id: runtime-cache
+        uses: actions/cache@v6
+        with:
+          path: runtime/dist
+          key: runtime-${{ runner.os }}-${{ hashFiles('runtime/proot/**', 'runtime/versions.env', 'tools/generate-runtime-manifest.mjs') }}
+      - name: Build pinned runtime artifacts
+        if: steps.runtime-cache.outputs.cache-hit != 'true'
+        run: ./gradlew buildRuntime --no-configuration-cache
+      - name: Verify release version
+        if: github.event_name == 'release'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(sed -n 's/^UBUNTU_RUNTIME_VERSION=//p' gradle.properties)
+          if [[ "$RELEASE_TAG" != "v$version" ]]; then
+            echo "Release tag must match v$version" >&2
+            exit 1
+          fi
+      - name: Verify and stage release artifacts
+        run: |
+          node --test tools/generate-runtime-manifest.test.mjs
+          ./gradlew testDebugUnitTest validatePublicationArtifacts --no-configuration-cache
+      - name: Validate publishing secrets
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          GPG_KEY_CONTENT: ${{ secrets.GPG_KEY_CONTENT }}
+        run: |
+          for name in MAVEN_CENTRAL_USERNAME MAVEN_CENTRAL_PASSWORD SIGNING_KEY_ID SIGNING_PASSWORD GPG_KEY_CONTENT; do
+            if [[ -z "${!name}" ]]; then
+              echo "Required publishing secret is missing: $name" >&2
+              exit 1
+            fi
+          done
+      - name: Upload signed release to Maven Central
+        run: ./gradlew publishToMavenCentral -PMAVEN_CENTRAL_PUBLISH=true --no-configuration-cache
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.SIGNING_KEY_ID }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.GPG_KEY_CONTENT }}
