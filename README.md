@@ -1,38 +1,41 @@
 # android-ubuntu-runtime
 
-Android library for installing an app-private Ubuntu rootfs, executing commands
-through PRoot or root-managed chroot, mounting application directories and supervising processes.
-No dependency on Compose, WebView, DSH Mobile, or the image repository is needed
-to build this project. The consuming app chooses its image dependency.
+Android library for installing an app-private Ubuntu root filesystem, running
+commands through PRoot or root-managed chroot, mounting host directories and
+supervising processes. The consuming app chooses its image dependency and owns
+its application services and UI.
 
-Maven artifact: `io.github.meteor149:ubuntu-runtime`.
-Repository name and Maven artifact name intentionally differ to preserve existing dependencies.
+Maven coordinate: `io.github.meteor149:ubuntu-runtime:0.2.0`.
 
 ## Build
 
-Use JDK 21, Android SDK 36, Node.js 24, and Android API 28+ / ARM64 for consumers.
-The wrapper uses a Java 17 toolchain for Kotlin/Java compilation, matching the host project.
-Build artifacts from source under Linux/WSL2 with Docker available:
+Use JDK 21, Android SDK 36 and Node.js 24 for descriptor tooling. Runtime consumers
+require Android API 28 or newer on ARM64. Kotlin and Java compilation use a Java
+17 toolchain. Source builds require Linux/WSL2 and Docker:
 
 ```bash
 ./gradlew buildRuntime
+node --test tools/generate-runtime-manifest.test.mjs
 ./gradlew testDebugUnitTest assembleRelease
 ```
 
-The PRoot toolchain and packaging scripts are in `runtime/proot`.
-`runtime/versions.env` pins this repository's input versions. Build outputs are
-stored in ignored `runtime/dist`. Generated binaries are intentionally not committed.
+The PRoot toolchain and packaging scripts are in `runtime/proot`. Input revisions
+and the builder image are pinned in `runtime/versions.env`. The builder uses a
+generic package namespace; the launcher receives paths from each consuming app.
+Generated archives and binaries live in ignored `runtime/dist`. Existing native
+artifacts can be supplied with `-PUBUNTU_ENGINE_DIST=/absolute/artifact/path`.
 A diagnostic AAR can be built without artifacts, but cannot be published.
 
-```bash
-node tools/generate-runtime-manifest.mjs runtime/dist
-node --test tools/generate-runtime-manifest.test.mjs
-```
+This AAR bundles the PRoot launcher, loader, shared-memory library and allocation
+library. Native filenames use the `libubuntu_` prefix; these are unchanged upstream
+programs apart from dependency-name adjustment for Android packaging. It does not
+bundle an Ubuntu filesystem. Optional proroot execution accepts complete-app
+binaries supplied by the host; those binaries are excluded from this AAR because
+their license limits redistribution to complete application packages.
 
-The generator defaults to this repository's component only. An existing manifest
-and artifacts can also be supplied with `-PUBUNTU_ENGINE_DIST=/absolute/artifact/path`.
+## Publication
 
-## Publish
+Versions and Maven coordinates are configured in `gradle.properties`.
 
 ```bash
 ./gradlew publish                 # build/maven-repository
@@ -40,46 +43,42 @@ and artifacts can also be supplied with `-PUBUNTU_ENGINE_DIST=/absolute/artifact
 ./gradlew publish -PUBUNTU_MAVEN_URL=https://your-repository.example/releases
 ```
 
-Version/group/artifact properties are in `gradle.properties`. Remote credentials
-use `UBUNTU_MAVEN_USERNAME` and `UBUNTU_MAVEN_PASSWORD` environment variables.
-Release AAR, sources JAR, POM and Gradle metadata are published. Maven Central publishing uses the configured GitHub Actions secrets.
-The build workflow builds real artifacts and uploads a local Maven repository.
-The `Publish to Maven Central` workflow runs on a published GitHub Release or
-manual dispatch. Release tags must match `v<version>` in `gradle.properties`.
-It uses the same secrets as `meteor149/cordis-kotlin`: `MAVEN_CENTRAL_USERNAME`,
-`MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY_ID`, `SIGNING_PASSWORD`, `GPG_KEY_CONTENT`.
-Signing is done in memory; no private key file is stored in the repository.
-The workflow uploads a signed deployment; complete publication in Central Portal
-as with cordis-kotlin. First source push does not trigger Central publication.
+Remote repositories use `UBUNTU_MAVEN_USERNAME` and `UBUNTU_MAVEN_PASSWORD`.
+The publication includes an AAR, sources, documentation, POM and Gradle metadata.
+Publishing refuses unavailable or checksum-invalid artifacts.
 
-To invoke the upload task directly, provide the corresponding
-`ORG_GRADLE_PROJECT_mavenCentral*` / `ORG_GRADLE_PROJECT_signingInMemory*`
-environment variables and run:
+The Maven Central workflow runs on manual dispatch or a published GitHub Release.
+Release tags must match `v<version>`. It uses `MAVEN_CENTRAL_USERNAME`,
+`MAVEN_CENTRAL_PASSWORD`, `SIGNING_KEY_ID`, `SIGNING_PASSWORD` and `GPG_KEY_CONTENT`.
+Keys are loaded in memory. The workflow uploads, validates and releases a signed
+Central deployment; ordinary source pushes only run the build workflow.
+
+For direct Central publication, provide the corresponding
+`ORG_GRADLE_PROJECT_mavenCentral*` and `ORG_GRADLE_PROJECT_signingInMemory*`
+environment variables, then run:
 
 ```bash
-./gradlew publishToMavenCentral -PMAVEN_CENTRAL_PUBLISH=true --no-configuration-cache
+./gradlew publishAndReleaseToMavenCentral -PMAVEN_CENTRAL_PUBLISH=true --no-configuration-cache
 ```
-
-The release publication includes the AAR, sources, a documentation JAR, POM,
-and Gradle metadata. All publishing tasks first validate the real runtime artifacts.
 
 ## Integration
 
-See [host configuration and API examples](docs/integration.md).
+See [host configuration and API examples](docs/integration.md). The public API
+provides installation, finite command execution, long-running process control and
+directory bindings. The host owns foreground services and notifications.
 
-The `samples/ubuntu-client` project is a Maven-only consumer with its own applicationId.
-After publishing this project and `android-ubuntu-image` locally, run:
+The standalone Maven consumer in `samples/ubuntu-client` has its own application
+identity. After locally publishing the runtime and image artifacts, run:
 
 ```bash
 ./gradlew -p samples/ubuntu-client assembleDebug
 ```
 
-The sample can also use `-PubuntuRepository=...`, `-PubuntuRuntimeVersion=...`
-and `-PubuntuImageVersion=...`. For long-running work the host owns the foreground
-service and notification lifetime. proroot binaries are excluded because their
-license allows redistribution only inside a complete application package.
+Set `ANDROID_HOME` or create the sample's local SDK properties. The sample accepts
+`-PubuntuRepository=...`, `-PubuntuRuntimeVersion=...` and `-PubuntuImageVersion=...`.
+It demonstrates generic Ubuntu commands and caller-supplied environment variables.
 
 ## License
 
-Host source code is under [Apache License 2.0](LICENSE). Bundled native programs,
-Ubuntu packages and image dependencies retain their upstream licenses.
+Host sources use [Apache License 2.0](LICENSE). Bundled native programs retain their
+upstream licenses. The consuming app is responsible for retaining those notices.

@@ -61,7 +61,7 @@ jobs:
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
           GPG_KEY_CONTENT: ${{ secrets.GPG_KEY_CONTENT }}
         run: |
-          for name in MAVEN_CENTRAL_USERNAME MAVEN_CENTRAL_PASSWORD SIGNING_KEY_ID SIGNING_PASSWORD GPG_KEY_CONTENT; do
+          for name in MAVEN_CENTRAL_USERNAME MAVEN_CENTRAL_PASSWORD SIGNING_KEY_ID GPG_KEY_CONTENT; do
             if [[ -z "${!name}" ]]; then
               echo "Required publishing secret is missing: $name" >&2
               exit 1

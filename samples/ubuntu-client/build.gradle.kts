@@ -16,7 +16,7 @@ android {
     // Executables must be extracted by the final APK packager.
     packaging.jniLibs {
         useLegacyPackaging = true
-        keepDebugSymbols += setOf("**/libdsh_proot.so", "**/libdsh_proot_loader.so", "**/libandroid-shmem.so", "**/libdsh_talloc.so")
+        keepDebugSymbols += setOf("**/libubuntu_proot.so", "**/libubuntu_proot_loader.so", "**/libandroid-shmem.so", "**/libubuntu_talloc.so")
     }
     androidResources.noCompress += "zst"
     compileOptions {

@@ -6,40 +6,21 @@ import process from 'node:process'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 const dist = path.resolve(process.argv[2] ?? path.join(projectRoot, 'runtime', 'dist'))
-const componentIndex = process.argv.indexOf('--component')
-const component = componentIndex < 0 ? 'engine' : process.argv[componentIndex + 1]
-if (!['all', 'engine', 'image', 'proroot'].includes(component)) {
-  throw new Error('Expected --component all, engine, image, or proroot')
-}
+if (process.argv.length > 3) throw new Error('Only an artifact directory can be supplied')
 const versions = parseEnv(await readFile(path.join(projectRoot, 'runtime', 'versions.env'), 'utf8'))
-const rootfsFile = 'dsh-ubuntu-arm64.tar.zst'
 const nativeFiles = [
-  ['libdsh_proot.so', 'libdsh_proot.so'],
-  ['libdsh_proot_loader.so', 'libdsh_proot_loader.so'],
+  ['libubuntu_proot.so', 'libubuntu_proot.so'],
+  ['libubuntu_proot_loader.so', 'libubuntu_proot_loader.so'],
   ['libandroid-shmem.so', 'libandroid-shmem.so'],
-  ['libdsh_talloc.so', 'libdsh_talloc.so'],
-  ['libproroot.so', 'libproroot.so', 'PROROOT_LAUNCHER_SHA256'],
-  ['libproroot-runtime.so', 'libproroot-runtime.so', 'PROROOT_RUNTIME_SHA256'],
-  ['libproroot-bridge.so', 'libproroot-bridge.so', 'PROROOT_BRIDGE_SHA256'],
-  ['libproroot-linker.so', 'libproroot-linker.so', 'PROROOT_LINKER_SHA256'],
-  ['libproroot-stub-loader.so', 'libproroot-stub-loader.so', 'PROROOT_STUB_LOADER_SHA256'],
+  ['libubuntu_talloc.so', 'libubuntu_talloc.so'],
+
 ]
 
-const rootfsPath = path.join(dist, rootfsFile)
-const rootfsStat = ['all', 'image'].includes(component) ? await stat(rootfsPath) : null
 const nativeLibraries = []
-for (const [file, packagedName, pinnedShaName] of nativeFiles) {
-  const isProroot = file.startsWith('libproroot')
-  if (component === 'image' || (component === 'engine' && isProroot) || (component === 'proroot' && !isProroot)) continue
+for (const [file, packagedName] of nativeFiles) {
   const artifactPath = path.join(dist, file)
   await stat(artifactPath)
   const actualSha256 = await sha256(artifactPath)
-  if (pinnedShaName) {
-    const expectedSha256 = required(versions, pinnedShaName).toLowerCase()
-    if (actualSha256 !== expectedSha256) {
-      throw new Error(`${file} checksum mismatch: expected=${expectedSha256} actual=${actualSha256}`)
-    }
-  }
   nativeLibraries.push({ file, packagedName, sha256: actualSha256 })
 }
 
@@ -48,16 +29,10 @@ const manifest = {
   available: true,
   runtimeVersion: required(versions, 'RUNTIME_VERSION'),
   abi: 'arm64-v8a',
-  rootfs: rootfsStat ? {
-    file: rootfsFile,
-    sha256: await sha256(rootfsPath),
-    compressedBytes: rootfsStat.size,
-    minimumFreeBytes: Math.max(2_147_483_648, rootfsStat.size * 5),
-  } : undefined,
   nativeLibraries,
   entrypoint: {
-    prootLibrary: 'libdsh_proot.so',
-    loaderLibrary: 'libdsh_proot_loader.so',
+    prootLibrary: 'libubuntu_proot.so',
+    loaderLibrary: 'libubuntu_proot_loader.so',
     prorootLibrary: 'libproroot.so',
     prorootRuntimeLibrary: 'libproroot-runtime.so',
     prorootBridgeLibrary: 'libproroot-bridge.so',
@@ -66,11 +41,9 @@ const manifest = {
     guestCommand: '/bin/bash',
   },
   sources: {
-    ubuntuImage: required(versions, 'UBUNTU_IMAGE'),
     termuxProotVersion: required(versions, 'TERMUX_PROOT_VERSION'),
     termuxProotCommit: required(versions, 'TERMUX_PROOT_COMMIT'),
     termuxPackagesCommit: required(versions, 'TERMUX_PACKAGES_COMMIT'),
-    prorootVersion: required(versions, 'PROROOT_VERSION'),
   },
 }
 

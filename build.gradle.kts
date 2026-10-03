@@ -19,7 +19,6 @@ if (providers.gradleProperty("MAVEN_CENTRAL_PUBLISH").getOrElse("false").toBoole
     }
 }
 
-extra["runtimeArtifactKind"] = "engine"
 apply(from = rootProject.file("gradle/runtime-artifacts.gradle.kts"))
 
 android {
@@ -33,7 +32,7 @@ android {
     sourceSets["main"].jniLibs.srcDir(layout.buildDirectory.dir("generated/runtime/jniLibs"))
     packaging.jniLibs {
         useLegacyPackaging = true
-        keepDebugSymbols += setOf("**/libdsh_proot.so", "**/libdsh_proot_loader.so", "**/libandroid-shmem.so", "**/libdsh_talloc.so")
+        keepDebugSymbols += setOf("**/libubuntu_proot.so", "**/libubuntu_proot_loader.so", "**/libandroid-shmem.so", "**/libubuntu_talloc.so")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

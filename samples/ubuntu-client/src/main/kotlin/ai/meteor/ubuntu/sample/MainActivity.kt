@@ -13,7 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
-/** A standalone Maven consumer: no dependency on the DSH app or shared UI module. */
+/** A standalone Maven consumer with its own application identity. */
 class MainActivity : Activity() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -26,7 +26,6 @@ class MainActivity : Activity() {
                 val ubuntu = UbuntuEnvironment(applicationContext)
                 ubuntu.install()
                 val result = ubuntu.execute(UbuntuCommand(listOf("/bin/bash", "-lc",
-                    "test ! -e /opt/node && test ! -e /opt/dsh && ! command -v node && " +
                     "cat /etc/os-release && uname -m && printf '%s\\n' \"\$LIBRARY_TEST\""),
                     mapOf("LIBRARY_TEST" to "maven-consumer-ok")))
                 check(result.exitCode == 0) { "Ubuntu exited with ${result.exitCode}: ${result.output}" }

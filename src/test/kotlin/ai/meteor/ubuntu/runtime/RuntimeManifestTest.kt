@@ -12,18 +12,18 @@ class RuntimeManifestTest {
             {
               "schemaVersion": 2,
               "available": true,
-              "runtimeVersion": "ubuntu-24.04_dsh-0.1.0-rc.6_1",
+              "runtimeVersion": "ubuntu-24.04-1",
               "abi": "arm64-v8a",
               "rootfs": {
-                "file": "dsh-ubuntu-arm64.tar.zst",
+                "file": "ubuntu-arm64.tar.zst",
                 "sha256": "rootfs-sha256",
                 "compressedBytes": 119985274,
                 "minimumFreeBytes": 2147483648
               },
               "nativeLibraries": [],
               "entrypoint": {
-                "prootLibrary": "libdsh_proot.so",
-                "loaderLibrary": "libdsh_proot_loader.so",
+                "prootLibrary": "libubuntu_proot.so",
+                "loaderLibrary": "libubuntu_proot_loader.so",
                 "prorootLibrary": "libproroot.so",
                 "prorootRuntimeLibrary": "libproroot-runtime.so",
                 "prorootBridgeLibrary": "libproroot-bridge.so",

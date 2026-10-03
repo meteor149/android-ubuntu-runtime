@@ -282,7 +282,7 @@ class UbuntuProcessSupervisor(
         return builder.start()
     }
 
-    /** Each rootless launch owns a separate session, including the gateway's child processes. */
+    /** Each rootless launch owns a separate session, including child processes. */
     private fun signalRootlessGroup(pidFile: Path?, signal: Int): Boolean {
         val pid = try {
             pidFile?.let { String(Files.readAllBytes(it), Charsets.UTF_8).trim().toIntOrNull() }

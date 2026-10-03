@@ -31,7 +31,7 @@ data class UbuntuCommand(
 data class UbuntuCommandResult(val exitCode: Int, val output: String)
 
 /**
- * App-private Ubuntu access without Compose, WebView or DSH lifecycle requirements.
+ * App-private Ubuntu command execution and process lifecycle.
  * Reuse one instance per app. Calls are serialized; the caller owns foreground-service
  * lifetime for long-running work. The image library is discovered through Android assets.
  */

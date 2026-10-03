@@ -15,21 +15,39 @@ class UbuntuLibraryTest {
         entrypoint = RuntimeEntrypoint("proot", "loader", "proroot", "runtime", "bridge", "linker", "stub", "/bin/bash"),
     )
 
+    private fun image(available: Boolean = true, architecture: String = "arm64") = UbuntuImageManifest(
+        schemaVersion = 1, available = available, imageVersion = "image-3", architecture = architecture,
+        archive = RootfsArtifact("ubuntu-arm64.tar.zst", "hash", 100, 1000),
+        source = UbuntuImageSource("ubuntu:24.04"),
+    )
+
     @Test fun independentlyVersionedArtifactsAreCombined() {
         val engine = manifest().copy(runtimeVersion = "engine-2", rootfs = null,
             nativeLibraries = listOf(NativeArtifact("proot", "proot", "hash")))
-        val image = manifest().copy(runtimeVersion = "image-3", nativeLibraries = emptyList())
+        val image = image()
         val combined = combineRuntimeManifests(engine, image)
         assertEquals("image-3", combined.runtimeVersion)
-        assertEquals(image.rootfs, combined.rootfs)
+        assertEquals(image.archive, combined.rootfs)
         assertEquals(engine.nativeLibraries, combined.nativeLibraries)
+        assertEquals(engine.entrypoint, combined.entrypoint)
         assertEquals(combined, Json.decodeFromString<RuntimeManifest>(Json.encodeToString(combined)))
     }
 
-    @Test fun missingImageIsUnavailableAndMismatchedAbiIsRejected() {
-        assertFalse(combineRuntimeManifests(manifest(), manifest(false)).available)
-        assertFailsWith<IllegalArgumentException> { combineRuntimeManifests(manifest(), manifest(abi = "x86_64")) }
-        assertFailsWith<IllegalArgumentException> { combineRuntimeManifests(manifest(), manifest().copy(rootfs = null)) }
+    @Test fun missingImageIsUnavailableAndMismatchedArchitectureIsRejected() {
+        assertFalse(combineRuntimeManifests(manifest(), null).available)
+        assertFalse(combineRuntimeManifests(manifest(), image(false)).available)
+        assertFailsWith<IllegalArgumentException> { combineRuntimeManifests(manifest(), image(architecture = "amd64")) }
+        assertFailsWith<IllegalArgumentException> { combineRuntimeManifests(manifest(), image().copy(archive = null)) }
+        assertFailsWith<IllegalArgumentException> { combineRuntimeManifests(manifest(), image().copy(schemaVersion = 2)) }
+    }
+
+    @Test fun imageDescriptorContainsNoRuntimeConfiguration() {
+        val descriptor = Json.decodeFromString<UbuntuImageManifest>(
+            """{"schemaVersion":1,"available":true,"imageVersion":"ubuntu-24.04-1", "architecture":"arm64",
+                "archive":{"file":"ubuntu-arm64.tar.zst","sha256":"hash","compressedBytes":100,"minimumFreeBytes":1000},
+                "source":{"ubuntuImage":"ubuntu:24.04"}}""",
+        )
+        assertEquals("ubuntu-24.04-1", combineRuntimeManifests(manifest(), descriptor).runtimeVersion)
     }
 
     @Test fun commandRejectsInvalidExecutableAndEnvironment() {

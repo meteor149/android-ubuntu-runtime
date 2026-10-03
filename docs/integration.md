@@ -14,8 +14,8 @@ android {
     packaging.jniLibs {
         useLegacyPackaging = true
         keepDebugSymbols += setOf(
-            "**/libdsh_proot.so", "**/libdsh_proot_loader.so",
-            "**/libandroid-shmem.so", "**/libdsh_talloc.so",
+            "**/libubuntu_proot.so", "**/libubuntu_proot_loader.so",
+            "**/libandroid-shmem.so", "**/libubuntu_talloc.so",
         )
     }
     androidResources.noCompress += "zst"
@@ -71,8 +71,4 @@ ubuntu.stop()
 ```
 
 挂载源需为已存在的绝对目录，目标为规范的 Ubuntu 绝对路径；环境变量和参数按字面量传递。
-长时间运行任务由宿主管理前台服务及相应权限。两库均不提供 Node、DSH、网关或 WebView。
-DSH 专用的 `RuntimeManager`、`RuntimeStateStore`、就绪协议及资源包在
-`dsh-mobile` 的内部 `:dsh-runtime` 模块中，包名为 `ai.meteor.dsh.runtime`。
-
-0.2.0 将 DSH API 移出了 Ubuntu 运行库；使用旧 API 的宿主应迁移到自己的业务层。
+长时间运行任务由宿主管理前台服务及相应权限。应用专用的软件、服务和生命周期由宿主自行实现。

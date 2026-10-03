@@ -2,26 +2,19 @@ import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
 import java.security.MessageDigest
 
-val kind = extra["runtimeArtifactKind"] as String
-val dist = providers.gradleProperty("UBUNTU_${kind.uppercase()}_DIST")
+val dist = providers.gradleProperty("UBUNTU_ENGINE_DIST")
     .map { rootProject.file(it) }.getOrElse(rootProject.file("runtime/dist"))
 val fallback = rootProject.file("runtime/manifest/unavailable.json")
 val assetsOutput = layout.buildDirectory.dir("generated/runtime/assets")
 val jniOutput = layout.buildDirectory.dir("generated/runtime/jniLibs")
-val manifestName = when (kind) {
-    "image" -> "ubuntu-image-manifest.json"
-    "engine" -> "ubuntu-engine-manifest.json"
-    else -> "ubuntu-proroot-manifest.json"
-}
-val prootNames = setOf("libdsh_proot.so", "libdsh_proot_loader.so", "libandroid-shmem.so", "libdsh_talloc.so")
-val prorootNames = setOf("libproroot.so", "libproroot-runtime.so", "libproroot-bridge.so", "libproroot-linker.so", "libproroot-stub-loader.so")
+val manifestName = "ubuntu-engine-manifest.json"
+val names = setOf("libubuntu_proot.so", "libubuntu_proot_loader.so", "libandroid-shmem.so", "libubuntu_talloc.so")
 
 tasks.register("prepareRuntimeAssets") {
     group = "runtime"
-    description = "Validates and stages only the $kind artifacts."
-    inputs.dir(dist)
+    description = "Validates and stages the native Ubuntu runtime artifacts."
+    inputs.files(fileTree(dist))
     inputs.file(fallback)
-    inputs.property("kind", kind)
     outputs.dir(assetsOutput)
     outputs.dir(jniOutput)
     doLast {
@@ -37,10 +30,10 @@ tasks.register("prepareRuntimeAssets") {
         val available = document["available"] == true
         @Suppress("UNCHECKED_CAST")
         val libraries = (document["nativeLibraries"] as? List<Map<String, String>>).orEmpty()
-        val names = if (kind == "engine") prootNames else prorootNames
-        val selectedLibraries = if (kind == "image") emptyList() else libraries.filter { it["packagedName"] in names }
-        document["nativeLibraries"] = selectedLibraries
-        if (kind != "image") document.remove("rootfs")
+        check(libraries.map { it["packagedName"] }.toSet() == names || !available) {
+            "The engine manifest must contain exactly the required native libraries"
+        }
+        check(document["rootfs"] == null) { "The engine manifest cannot contain an image archive" }
 
         fun stage(name: String, expectedHash: String, destination: File) {
             check(name.matches(Regex("[A-Za-z0-9._-]+"))) { "Invalid artifact filename: $name" }
@@ -61,20 +54,11 @@ tasks.register("prepareRuntimeAssets") {
             source.copyTo(destination, overwrite = true)
         }
         if (available) {
-            if (kind == "image") {
-                val rootfs = document["rootfs"] as Map<*, *>
-                val name = rootfs["file"] as String
-                stage(name, rootfs["sha256"] as String, runtimeAssets.resolve(name))
-            } else {
-                check(selectedLibraries.map { it.getValue("packagedName") }.toSet() == names) {
-                    "The $kind manifest must include all required native libraries: $names"
-                }
-                val abi = document["abi"] as String
-                check(abi == "arm64-v8a") { "Unsupported runtime ABI: $abi" }
-                selectedLibraries.forEach { library ->
-                    stage(library.getValue("file"), library.getValue("sha256"),
-                        jni.resolve("$abi/${library.getValue("packagedName")}"))
-                }
+            val abi = document["abi"] as String
+            check(abi == "arm64-v8a") { "Unsupported runtime ABI: $abi" }
+            libraries.forEach { library ->
+                stage(library.getValue("file"), library.getValue("sha256"),
+                    jni.resolve("$abi/${library.getValue("packagedName")}"))
             }
         }
         runtimeAssets.resolve(manifestName).writeText(JsonOutput.prettyPrint(JsonOutput.toJson(document)) + "\n")
@@ -86,7 +70,7 @@ tasks.register("validatePublicationArtifacts") {
     doLast {
         val document = JsonSlurper().parse(assetsOutput.get().file("runtime/$manifestName").asFile) as Map<*, *>
         check(document["available"] == true) {
-            "Cannot publish $project: runtime artifacts are unavailable. Build or supply the $kind artifacts first."
+            "Cannot publish $project: runtime artifacts are unavailable. Build or supply the native artifacts first."
         }
     }
 }

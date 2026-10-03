@@ -27,18 +27,18 @@ for required in "$proot" "$loader" "$shmem" "$talloc"; do
   [[ -f "$required" ]] || { echo "Missing built artifact: $required" >&2; exit 1; }
 done
 
-install -m 0755 "$proot" /out/libdsh_proot.so
-install -m 0755 "$loader" /out/libdsh_proot_loader.so
+install -m 0755 "$proot" /out/libubuntu_proot.so
+install -m 0755 "$loader" /out/libubuntu_proot_loader.so
 install -m 0755 "$shmem" /out/libandroid-shmem.so
-install -m 0755 "$talloc" /out/libdsh_talloc.so
+install -m 0755 "$talloc" /out/libubuntu_talloc.so
 
 while IFS= read -r dependency; do
   case "$dependency" in
-    libtalloc.so*) patchelf --replace-needed "$dependency" libdsh_talloc.so /out/libdsh_proot.so ;;
+    libtalloc.so*) patchelf --replace-needed "$dependency" libubuntu_talloc.so /out/libubuntu_proot.so ;;
   esac
-done < <(patchelf --print-needed /out/libdsh_proot.so)
+done < <(patchelf --print-needed /out/libubuntu_proot.so)
 
-readelf -h /out/libdsh_proot.so | grep -q 'AArch64' || { echo 'PRoot is not AArch64' >&2; exit 1; }
-readelf -h /out/libdsh_proot_loader.so | grep -q 'AArch64' || { echo 'PRoot loader is not AArch64' >&2; exit 1; }
+readelf -h /out/libubuntu_proot.so | grep -q 'AArch64' || { echo 'PRoot is not AArch64' >&2; exit 1; }
+readelf -h /out/libubuntu_proot_loader.so | grep -q 'AArch64' || { echo 'PRoot loader is not AArch64' >&2; exit 1; }
 echo 'PRoot dependencies:'
-patchelf --print-needed /out/libdsh_proot.so
+patchelf --print-needed /out/libubuntu_proot.so

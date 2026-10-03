@@ -5,15 +5,15 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 project_root="$(cd -- "$script_dir/../.." && pwd)"
 source "$project_root/runtime/versions.env"
 if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
-  work_root="${DSH_PROOT_WORK_ROOT:-/var/tmp/dsh-mobile-runtime/proot}"
+  work_root="${UBUNTU_PROOT_WORK_ROOT:-/var/tmp/android-ubuntu-runtime/proot}"
 else
-  work_root="${DSH_PROOT_WORK_ROOT:-$project_root/runtime/.work/proot}"
+  work_root="${UBUNTU_PROOT_WORK_ROOT:-$project_root/runtime/.work/proot}"
 fi
 source_root="$work_root/termux-packages"
 dist="$project_root/runtime/dist"
 
 case "$work_root" in
-  "$project_root/runtime/.work/"*|/var/tmp/dsh-mobile-runtime/proot) ;;
+  "$project_root/runtime/.work/"*|/var/tmp/android-ubuntu-runtime/proot) ;;
   *) echo "unsafe work path: $work_root" >&2; exit 1 ;;
 esac
 mkdir -p "$work_root" "$dist"
@@ -30,18 +30,18 @@ git -c "safe.directory=$source_root" -C "$source_root" \
 git -c "safe.directory=$source_root" -C "$source_root" \
   checkout --force --detach "$TERMUX_PACKAGES_COMMIT"
 
-if [[ "$work_root" == /var/tmp/dsh-mobile-runtime/proot ]]; then
+if [[ "$work_root" == /var/tmp/android-ubuntu-runtime/proot ]]; then
   chown -R "${TERMUX_BUILDER_UID:-1001}:${TERMUX_BUILDER_GID:-1001}" "$source_root"
 fi
 
 properties="$source_root/scripts/properties.sh"
-sed -i 's/^TERMUX_APP__PACKAGE_NAME="com\.termux"$/TERMUX_APP__PACKAGE_NAME="ai.meteor.dshmobile"/' "$properties"
-grep -q '^TERMUX_APP__PACKAGE_NAME="ai.meteor.dshmobile"$' "$properties" || {
+sed -i 's/^TERMUX_APP__PACKAGE_NAME="com\.termux"$/TERMUX_APP__PACKAGE_NAME="ai.meteor.ubuntu.runtime"/' "$properties"
+grep -q '^TERMUX_APP__PACKAGE_NAME="ai.meteor.ubuntu.runtime"$' "$properties" || {
   echo "Unable to configure the Termux package name" >&2
   exit 1
 }
 
-container_name="dsh-mobile-termux-builder-$$"
+container_name="ubuntu-runtime-termux-builder-$$"
 cleanup() {
   docker rm --force "$container_name" >/dev/null 2>&1 || true
 }

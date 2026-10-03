@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 
 class ProrootLaunchCommandTest {
     @Test
-    fun commandUsesSupportedProrootOptionsAndSharedRuntimeData() {
+    fun commandSupportsProrootAndPersistentDirectories() {
         val proroot = Paths.get("/native/libproroot.so")
         val rootfs = Paths.get("/data/runtime/rootfs")
         val home = Paths.get("/data/linux-data/home")

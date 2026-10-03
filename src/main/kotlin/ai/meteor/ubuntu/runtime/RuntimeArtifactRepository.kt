@@ -16,10 +16,10 @@ class RuntimeArtifactRepository(
     fun readManifest(): RuntimeManifest {
         val engine = readAsset("runtime/ubuntu-engine-manifest.json")
         val image = if ("ubuntu-image-manifest.json" in assets.list("runtime").orEmpty()) {
-            readAsset("runtime/ubuntu-image-manifest.json")
-        } else {
-            engine.copy(available = false)
-        }
+            assets.open("runtime/ubuntu-image-manifest.json").bufferedReader().use {
+                json.decodeFromString<UbuntuImageManifest>(it.readText())
+            }.also { require(it.schemaVersion == 1) { "Unsupported Ubuntu image descriptor schema" } }
+        } else null
         val proroot = if ("ubuntu-proroot-manifest.json" in assets.list("runtime").orEmpty()) {
             readAsset("runtime/ubuntu-proroot-manifest.json").takeIf { it.available }
         } else null
@@ -47,17 +47,22 @@ class RuntimeArtifactRepository(
 
 internal fun combineRuntimeManifests(
     engine: RuntimeManifest,
-    image: RuntimeManifest,
+    image: UbuntuImageManifest?,
     proroot: RuntimeManifest? = null,
 ): RuntimeManifest {
-    if (engine.available && image.available) {
-        require(engine.abi == image.abi) { "Ubuntu image and engine ABIs differ" }
-        requireNotNull(image.rootfs) { "An available Ubuntu image must declare a rootfs artifact" }
+    if (image != null) require(image.schemaVersion == 1) { "Unsupported Ubuntu image descriptor schema" }
+    if (engine.available && image?.available == true) {
+        require(image.architecture == "arm64" && engine.abi == "arm64-v8a") {
+            "Ubuntu image architecture and engine ABI differ"
+        }
+        requireNotNull(image.archive) { "An available Ubuntu image must declare its archive" }
     }
     if (proroot != null) require(proroot.abi == engine.abi) { "proroot and engine ABIs differ" }
-    return image.copy(
-        available = engine.available && image.available,
+    return engine.copy(
+        available = engine.available && image?.available == true,
+        runtimeVersion = image?.imageVersion ?: engine.runtimeVersion,
+        rootfs = image?.archive,
         nativeLibraries = engine.nativeLibraries + proroot?.nativeLibraries.orEmpty(),
-        entrypoint = engine.entrypoint.copy(guestCommand = image.entrypoint.guestCommand),
+        sources = engine.sources?.copy(ubuntuImage = image?.source?.ubuntuImage.orEmpty()),
     )
 }
