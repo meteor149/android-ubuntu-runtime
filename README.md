@@ -68,13 +68,14 @@ provides installation, finite command execution, long-running process control an
 directory bindings. The host owns foreground services and notifications.
 
 The standalone Maven consumer in `samples/ubuntu-client` has its own application
-identity. After locally publishing the runtime and image artifacts, run:
+identity and resolves both libraries from Maven Central by default. Run:
 
 ```bash
 ./gradlew -p samples/ubuntu-client assembleDebug
 ```
 
-Set `ANDROID_HOME` or create the sample's local SDK properties. The sample accepts
+For a local repository, pass `-PubuntuRepository=...`. Set `ANDROID_HOME` or create
+the sample's local SDK properties. The sample accepts
 `-PubuntuRepository=...`, `-PubuntuRuntimeVersion=...` and `-PubuntuImageVersion=...`.
 It demonstrates generic Ubuntu commands and caller-supplied environment variables.
 
