@@ -1,0 +1,29 @@
+diff --git a/src/extension/link2symlink/link2symlink.c b/src/extension/link2symlink/link2symlink.c
+index d2780ce..a441c98 100644
+--- a/src/extension/link2symlink/link2symlink.c
++++ b/src/extension/link2symlink/link2symlink.c
+@@ -1522,6 +1522,24 @@ int link2symlink_callback(Extension *extension, ExtensionEvent event,
+ 		return status < 0 ? status : correct_l2s_dirents(TRACEE(extension));
+ 	}
+ 
++	case HOST_PATH: {
++		/* An l2s alias represents its backing inode. Inspect that inode
++		 * directly rather than interpreting an absolute host store path
++		 * as another guest symlink component. This also works for stores
++		 * outside rootfs without exposing a new guest binding. */
++		char *host_path = (char *) data1;
++		char final[PATH_MAX];
++		struct stat st;
++		if (resolve_faked_hard_link(host_path, final) == 0 &&
++		    lstat(final, &st) == 0 && !S_ISLNK(st.st_mode)) {
++			Link2SymlinkConfig *config = get_config(extension, true);
++			if (config == NULL) return -ENOMEM;
++			strcpy(config->dereferenced_link, host_path);
++			strcpy(host_path, final);
++		}
++		return 0;
++	}
++
+ 	case GUEST_PATH: {
+ 		/* A new path is about to be canonicalized.  */
+ 		Link2SymlinkConfig *config = get_config(extension, false);

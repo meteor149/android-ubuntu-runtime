@@ -13,6 +13,9 @@ The build fetches the checksum-pinned upstream archive; no source tree is vendor
   instead of the host symlink type. See
   [Termux issue #350](https://github.com/termux/proot/issues/350).
   Ordinary symbolic links retain their original type.
+* `030-private-store-resolution.patch`: resolve recognized simulated links
+  directly to their host backing files. This is needed when the persistent
+  private store lives outside the guest rootfs; ordinary symlinks are unchanged.
 
 PR #395 was reviewed but excluded: its broader chain rewrite conflicts with
 the newer base, and real hard links remain denied in Android app storage.
