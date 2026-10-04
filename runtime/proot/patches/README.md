@@ -26,3 +26,7 @@ strategy suited to their private staging files.
 
 Coordinate: `io.github.meteor149:ubuntu-runtime:0.3.0-SNAPSHOT`.
 Repository: `https://central.sonatype.com/repository/maven-snapshots/`.
+
+Focused Linux check after building the patched upstream executable:
+`bash runtime/proot/tests/check-snapshot.sh /absolute/path/to/proot`.
+Also run the upstream `tests/test-5c2e7a91.sh` with `PROOT` set to that executable.

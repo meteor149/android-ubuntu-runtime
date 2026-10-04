@@ -5,7 +5,10 @@ commands through PRoot or root-managed chroot, mounting host directories and
 supervising processes. The consuming app chooses its image dependency and owns
 its application services and UI.
 
-Maven coordinate: `io.github.meteor149:ubuntu-runtime:0.2.0`.
+This development branch publishes `io.github.meteor149:ubuntu-runtime:0.3.0-SNAPSHOT`
+to `https://central.sonatype.com/repository/maven-snapshots/`.
+The stable Maven Central version remains `0.2.0`.
+See [temporary PRoot fixes and their limits](runtime/proot/patches/README.md).
 
 ## Build
 
@@ -27,12 +30,12 @@ artifacts can be supplied with `-PUBUNTU_ENGINE_DIST=/absolute/artifact/path`.
 A diagnostic AAR can be built without artifacts, but cannot be published.
 
 This AAR bundles the PRoot launcher, loader, shared-memory library and allocation
-library. Native filenames use the `libubuntu_` prefix; these are unchanged upstream
-programs apart from dependency-name adjustment for Android packaging. It does not
+library. Native filenames use the `libubuntu_` prefix; this snapshot also applies
+the limited compatibility patches documented above. It does not
 bundle an Ubuntu filesystem. Source builds support `RuntimeMode.Proot` and
 `RuntimeMode.Chroot`; the runtime descriptor uses schema 3. The published 0.2.0
-artifact retains its original API and descriptor; these source changes will only
-reach Maven consumers in a future release.
+artifact retains its original API and descriptor. The snapshot uses the current
+two-backend API and schema 3; consumers of 0.2.0 must adjust their integrations.
 
 ## Publication
 
@@ -61,6 +64,9 @@ environment variables, then run:
 ```bash
 ./gradlew publishAndReleaseToMavenCentral -PMAVEN_CENTRAL_PUBLISH=true --no-configuration-cache
 ```
+
+For snapshot versions, use `publishToMavenCentral` instead. Manual workflow
+dispatch selects the correct task based on the version suffix.
 
 ## Integration
 
