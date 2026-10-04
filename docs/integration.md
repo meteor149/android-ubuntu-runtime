@@ -3,9 +3,20 @@
 在项目 repositories 中加入实际发布地址，本地验证可使用本仓库的 `build/maven-repository`。
 然后在 Android app 模块中配置：
 
+本开发分支的临时版本需要 Central snapshot 仓库：
+
+```kotlin
+repositories {
+    maven("https://central.sonatype.com/repository/maven-snapshots/") {
+        mavenContent { snapshotsOnly() }
+    }
+    mavenCentral()
+}
+```
+
 ```kotlin
 dependencies {
-    implementation("io.github.meteor149:ubuntu-runtime:0.2.0")
+    implementation("io.github.meteor149:ubuntu-runtime:0.3.0-SNAPSHOT")
     implementation("io.github.meteor149:ubuntu-image:24.04-1")
 }
 
