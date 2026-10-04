@@ -67,8 +67,14 @@ jobs:
               exit 1
             fi
           done
-      - name: Publish signed release to Maven Central
-        run: ./gradlew publishAndReleaseToMavenCentral -PMAVEN_CENTRAL_PUBLISH=true --no-configuration-cache
+      - name: Publish signed artifacts to Maven Central
+        run: |
+          version=$(sed -n 's/^UBUNTU_RUNTIME_VERSION=//p' gradle.properties)
+          if [[ "$version" == *-SNAPSHOT ]]; then
+            ./gradlew publishToMavenCentral -PMAVEN_CENTRAL_PUBLISH=true --no-configuration-cache
+          else
+            ./gradlew publishAndReleaseToMavenCentral -PMAVEN_CENTRAL_PUBLISH=true --no-configuration-cache
+          fi
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

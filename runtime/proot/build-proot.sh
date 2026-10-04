@@ -34,6 +34,17 @@ if [[ "$work_root" == /var/tmp/android-ubuntu-runtime/proot ]]; then
   chown -R "${TERMUX_BUILDER_UID:-1001}:${TERMUX_BUILDER_GID:-1001}" "$source_root"
 fi
 
+# Keep the recipes/NDK pinned, but build the reviewed PRoot commit instead of
+# their older release archive. Patches are deliberately limited and tracked.
+recipe="$source_root/packages/proot/build.sh"
+sed -i \
+  -e "s|^TERMUX_PKG_VERSION=.*|TERMUX_PKG_VERSION=\"$TERMUX_PROOT_VERSION\"|" \
+  -e "s|^TERMUX_PKG_SRCURL=.*|TERMUX_PKG_SRCURL=https://github.com/termux/proot/archive/$TERMUX_PROOT_COMMIT.zip|" \
+  -e "s|^TERMUX_PKG_SHA256=.*|TERMUX_PKG_SHA256=$TERMUX_PROOT_SOURCE_SHA256|" "$recipe"
+for patch in "$script_dir"/patches/*.patch; do
+  install -m 0644 "$patch" "$source_root/packages/proot/$(basename "$patch")"
+done
+
 properties="$source_root/scripts/properties.sh"
 sed -i 's/^TERMUX_APP__PACKAGE_NAME="com\.termux"$/TERMUX_APP__PACKAGE_NAME="ai.meteor.ubuntu.runtime"/' "$properties"
 grep -q '^TERMUX_APP__PACKAGE_NAME="ai.meteor.ubuntu.runtime"$' "$properties" || {

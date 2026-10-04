@@ -192,6 +192,9 @@ class UbuntuProcessSupervisor(
         val nativeDirectory = Paths.get(appContext.applicationInfo.nativeLibraryDir)
         val proot = requireExecutable(nativeDirectory, runtime.manifest.entrypoint.prootLibrary)
         val loader = requireExecutable(nativeDirectory, runtime.manifest.entrypoint.loaderLibrary)
+        val hardlinks = appContext.filesDir.toPath().resolve("linux-data/hardlinks")
+        Files.createDirectories(hardlinks)
+        Os.chmod(hardlinks.toString(), 0x1c0)
         return startRootless(ProcessBuilder(buildProotCommand(runtime, proot, data, command))
             .directory(runtime.runtimeDirectory.toFile())
             .redirectErrorStream(true)
@@ -200,6 +203,7 @@ class UbuntuProcessSupervisor(
                 environment()["HOME"] = data.home.toString()
                 environment()["TMPDIR"] = data.temporary.toString()
                 environment()["PROOT_TMP_DIR"] = data.temporary.toString()
+                environment()["PROOT_L2S_DIR"] = hardlinks.toString()
                 environment()["PROOT_LOADER"] = loader.toString()
                 environment()["LD_LIBRARY_PATH"] = nativeDirectory.toString()
                 environment()["LANG"] = "C.UTF-8"

@@ -1,0 +1,103 @@
+diff --git a/src/extension/link2symlink/link2symlink.c b/src/extension/link2symlink/link2symlink.c
+index 6c98a89..d2780ce 100644
+--- a/src/extension/link2symlink/link2symlink.c
++++ b/src/extension/link2symlink/link2symlink.c
+@@ -10,6 +10,8 @@
+ #include <limits.h>    /* PATH_MAX, */
+ #include <ctype.h>     /* isdigit, */
+ #include <stdbool.h>   /* bool, true, false, */
++#include <stdint.h>
++#include <stddef.h>
+ #include <talloc.h>    /* talloc_*, */
+ 
+ #include "cli/note.h"
+@@ -1286,6 +1288,71 @@ static int handle_linkat_from_proc_fd(Tracee *tracee) {
+ 	return 1;
+ }
+ 
++
++/* getdents64 exposes kernel directory entries, before path translation can
++ * hide an l2s alias. Correct only aliases recognised by the existing resolver.
++ * The directory descriptor keeps lookups attached to the enumerated directory
++ * even if its pathname is renamed while this result is being processed. */
++struct l2s_dirent64 {
++	uint64_t ino;
++	int64_t off;
++	unsigned short reclen;
++	unsigned char type;
++	char name[];
++};
++
++static int correct_l2s_dirents(Tracee *tracee)
++{
++	long length = (long) peek_reg(tracee, CURRENT, SYSARG_RESULT);
++	char directory[64], path[PATH_MAX], final[PATH_MAX];
++	char *buffer;
++	int dirfd, status;
++	bool changed = false;
++	word_t address;
++
++	if (get_sysnum(tracee, ORIGINAL) != PR_getdents64 || length <= 0)
++		return 0;
++	snprintf(directory, sizeof(directory), "/proc/%d/fd/%d",
++		 tracee->pid, (int) peek_reg(tracee, ORIGINAL, SYSARG_1));
++	dirfd = open(directory, O_PATH | O_DIRECTORY | O_CLOEXEC);
++	if (dirfd < 0)
++		return 0;
++	buffer = malloc(length);
++	if (buffer == NULL) {
++		close(dirfd);
++		return -ENOMEM;
++	}
++	address = peek_reg(tracee, ORIGINAL, SYSARG_2);
++	status = read_data(tracee, buffer, address, length);
++	if (status < 0)
++		goto out;
++	for (long offset = 0; offset < length;) {
++		struct l2s_dirent64 *entry = (void *) (buffer + offset);
++		struct stat st;
++		const size_t header = offsetof(struct l2s_dirent64, name);
++		if ((size_t) (length - offset) < header + 1 ||
++		    entry->reclen < header + 1 || entry->reclen > length - offset ||
++		    memchr(entry->name, '\0', entry->reclen - header) == NULL) {
++			status = -EIO;
++			goto out;
++		}
++		int size = snprintf(path, sizeof(path), "/proc/self/fd/%d/%s", dirfd, entry->name);
++		if (size > 0 && size < PATH_MAX &&
++		    resolve_faked_hard_link(path, final) == 0 && stat(final, &st) == 0) {
++			entry->ino = st.st_ino;
++			entry->type = (st.st_mode & S_IFMT) >> 12;
++			changed = true;
++		}
++		offset += entry->reclen;
++	}
++	if (changed)
++		status = write_data(tracee, address, buffer, length);
++out:
++	free(buffer);
++	close(dirfd);
++	return status;
++}
++
+ /**
+  * Handler for this @extension.  It is triggered each time an @event
+  * occurred.  See ExtensionEvent for the meaning of @data1 and @data2.
+@@ -1299,6 +1366,7 @@ int link2symlink_callback(Extension *extension, ExtensionEvent event,
+ 	case INITIALIZATION: {
+ 		/* List of syscalls handled by this extensions.  */
+ 		static FilteredSysnum filtered_sysnums[] = {
++			{ PR_getdents64,	FILTER_SYSEXIT },
+ 			{ PR_link,		FILTER_SYSEXIT },
+ 			{ PR_linkat,		FILTER_SYSEXIT },
+ 			{ PR_unlink,		FILTER_SYSEXIT },
+@@ -1450,7 +1518,8 @@ int link2symlink_callback(Extension *extension, ExtensionEvent event,
+ 	}
+ 
+ 	case SYSCALL_EXIT_END: {
+-		return handle_sysexit_end(extension);
++		status = handle_sysexit_end(extension);
++		return status < 0 ? status : correct_l2s_dirents(TRACEE(extension));
+ 	}
+ 
+ 	case GUEST_PATH: {
